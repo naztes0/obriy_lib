@@ -238,3 +238,88 @@ test('copy routes pass the actor and JSON to the copy service', async () => {
     actor,
   });
 });
+
+test('school class list is available to an authenticated librarian', async () => {
+  const authService = {
+    authenticateToken: async () => ({ id: '2', role: 'librarian' }),
+    login: async () => {},
+    logout: async () => {},
+  };
+  const schoolClassService = {
+    list: async () => [{ id: '1', name: '10-А', isActive: true }],
+  };
+  const baseUrl = await startTestServer(
+    { query: async () => ({}) },
+    { services: { authService, catalogService: {}, copyService: {}, schoolClassService } },
+  );
+
+  const response = await fetch(`${baseUrl}/api/v1/school-classes`, {
+    headers: { Cookie: 'obriy_session=test-session' },
+  });
+
+  assert.equal(response.status, 200);
+  assert.deepEqual((await response.json()).data, [{ id: '1', name: '10-А', isActive: true }]);
+});
+
+test('school class changes are forbidden for a librarian', async () => {
+  const authService = {
+    authenticateToken: async () => ({ id: '2', role: 'librarian' }),
+    login: async () => {},
+    logout: async () => {},
+  };
+  const baseUrl = await startTestServer(
+    { query: async () => ({}) },
+    {
+      services: {
+        authService,
+        catalogService: {},
+        copyService: {},
+        schoolClassService: { create: async () => assert.fail('service must not be called') },
+      },
+    },
+  );
+
+  const response = await fetch(`${baseUrl}/api/v1/school-classes`, {
+    method: 'POST',
+    headers: {
+      Cookie: 'obriy_session=test-session',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ name: '10-А' }),
+  });
+
+  assert.equal(response.status, 403);
+  assert.equal((await response.json()).error.code, 'ACCESS_DENIED');
+});
+
+test('manager can create a school class', async () => {
+  const actor = { id: '1', role: 'manager' };
+  const authService = {
+    authenticateToken: async () => actor,
+    login: async () => {},
+    logout: async () => {},
+  };
+  let received;
+  const schoolClassService = {
+    create: async (input) => {
+      received = input;
+      return { id: '3', name: input.name, isActive: true };
+    },
+  };
+  const baseUrl = await startTestServer(
+    { query: async () => ({}) },
+    { services: { authService, catalogService: {}, copyService: {}, schoolClassService } },
+  );
+
+  const response = await fetch(`${baseUrl}/api/v1/school-classes`, {
+    method: 'POST',
+    headers: {
+      Cookie: 'obriy_session=test-session',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ name: '11-Б' }),
+  });
+
+  assert.equal(response.status, 201);
+  assert.deepEqual(received, { name: '11-Б' });
+});
