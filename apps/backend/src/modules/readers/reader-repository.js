@@ -1,0 +1,298 @@
+function toDateOnly(value) {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'string') return value.slice(0, 10);
+  if (value instanceof Date) {
+    const year = value.getFullYear();
+    const month = String(value.getMonth() + 1).padStart(2, '0');
+    const day = String(value.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+  return value;
+}
+
+function mapReader(row) {
+  return {
+    id: String(row.reader_id),
+    fullName: row.full_name,
+    category: row.category,
+    schoolClass: row.class_id === null ? null : { id: String(row.class_id), name: row.class_name },
+    phone: row.phone,
+    address: row.address,
+    ticketNumber: row.ticket_number,
+    ticketType: row.ticket_type,
+    ticketIssuedOn: toDateOnly(row.ticket_issued_on),
+    ticketExpiresOn: toDateOnly(row.ticket_expires_on),
+    isArchived: row.archived_at !== null,
+    archiveReason: row.archive_reason,
+    version: String(row.version),
+  };
+}
+
+const READER_SELECT = `SELECT rpd.reader_id, rpd.full_name, rpd.category, rpd.class_id,
+                              sc.name AS class_name, rpd.phone, rpd.address,
+                              rpd.ticket_number, rpd.ticket_type, rpd.ticket_issued_on,
+                              rpd.ticket_expires_on, rpd.archived_at, rpd.archive_reason,
+                              rpd.version
+                       FROM reader_personal_data rpd
+                       LEFT JOIN school_classes sc ON sc.id = rpd.class_id`;
+
+function snapshot(row) {
+  return {
+    fullName: row.full_name,
+    category: row.category,
+    classId: row.class_id === null ? null : String(row.class_id),
+    phone: row.phone,
+    address: row.address,
+    ticketNumber: row.ticket_number,
+    ticketType: row.ticket_type,
+    ticketIssuedOn: toDateOnly(row.ticket_issued_on),
+    ticketExpiresOn: toDateOnly(row.ticket_expires_on),
+  };
+}
+
+function mapLoan(loan) {
+  return {
+    id: String(loan.id),
+    status: loan.status,
+    issuedAt: loan.issued_at,
+    initialDueDate: toDateOnly(loan.initial_due_date),
+    currentDueDate: toDateOnly(loan.current_due_date),
+    returnedAt: loan.returned_at,
+    compensatedAt: loan.compensated_at,
+    book: { id: String(loan.book_id), title: loan.title },
+    copy: { id: String(loan.copy_id), inventoryNumber: loan.inventory_number },
+  };
+}
+
+const LOAN_SELECT = `SELECT l.id, l.status, l.issued_at, l.initial_due_date, l.current_due_date,
+                            l.returned_at, l.compensated_at, b.id AS book_id, b.title,
+                            bc.id AS copy_id, bc.inventory_number
+                     FROM loans l
+                     JOIN book_copies bc ON bc.id = l.copy_id
+                     JOIN books b ON b.id = bc.book_id`;
+
+async function validateActiveClass(client, classId) {
+  if (classId === null) return true;
+  const result = await client.query(
+    'SELECT id FROM school_classes WHERE id = $1 AND is_active = true FOR SHARE',
+    [classId],
+  );
+  return result.rowCount > 0;
+}
+
+async function generateTicketNumber(client) {
+  for (;;) {
+    const sequence = await client.query(
+      "SELECT nextval('electronic_ticket_number_seq')::text AS value",
+    );
+    const candidate = `E-${sequence.rows[0].value}`;
+    const exists = await client.query(
+      'SELECT 1 FROM reader_personal_data WHERE upper(ticket_number) = upper($1)',
+      [candidate],
+    );
+    if (!exists.rowCount) return candidate;
+  }
+}
+
+export class ReaderRepository {
+  constructor(pool) {
+    this.pool = pool;
+  }
+
+  async listReaders({ query, archived, pageSize, offset }) {
+    const values = [];
+    const conditions = [];
+    if (query) {
+      values.push(`%${query.replace(/[\\%_]/g, '\\$&')}%`);
+      conditions.push(
+        `(rpd.full_name ILIKE $${values.length} ESCAPE '\\' OR rpd.ticket_number ILIKE $${values.length} ESCAPE '\\')`,
+      );
+    }
+    if (archived === 'active') conditions.push('rpd.archived_at IS NULL');
+    if (archived === 'archived') conditions.push('rpd.archived_at IS NOT NULL');
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+
+    const count = await this.pool.query(
+      `SELECT count(*) AS total FROM reader_personal_data rpd ${where}`,
+      values,
+    );
+    const result = await this.pool.query(
+      `${READER_SELECT}
+       ${where}
+       ORDER BY lower(rpd.full_name), rpd.reader_id
+       LIMIT $${values.length + 1} OFFSET $${values.length + 2}`,
+      [...values, pageSize, offset],
+    );
+    return {
+      readers: result.rows.map(mapReader),
+      totalItems: Number(count.rows[0].total),
+    };
+  }
+
+  async findById(readerId) {
+    const result = await this.pool.query(`${READER_SELECT} WHERE rpd.reader_id = $1`, [readerId]);
+    if (!result.rowCount) return null;
+
+    const currentLoans = await this.pool.query(
+      `${LOAN_SELECT}
+       WHERE l.reader_id = $1 AND l.status IN ('issued', 'lost')
+       ORDER BY l.issued_at DESC, l.id DESC`,
+      [readerId],
+    );
+    const history = await this.pool.query(
+      `${LOAN_SELECT}
+       WHERE l.reader_id = $1
+       ORDER BY l.issued_at DESC, l.id DESC
+       LIMIT 25`,
+      [readerId],
+    );
+    const historyCount = await this.pool.query(
+      'SELECT count(*) AS total FROM loans WHERE reader_id = $1',
+      [readerId],
+    );
+    return {
+      ...mapReader(result.rows[0]),
+      currentLoans: currentLoans.rows.map(mapLoan),
+      loanHistory: history.rows.map(mapLoan),
+      loanHistoryTotal: Number(historyCount.rows[0].total),
+    };
+  }
+
+  async findNamesakes(fullNameNormalized, excludeReaderId = null) {
+    const result = await this.pool.query(
+      `SELECT reader_id, full_name, ticket_number, archived_at
+       FROM reader_personal_data
+       WHERE lower(regexp_replace(btrim(full_name), '[[:space:]]+', ' ', 'g')) = $1
+         AND ($2::bigint IS NULL OR reader_id <> $2)
+       ORDER BY archived_at NULLS FIRST, reader_id`,
+      [fullNameNormalized, excludeReaderId],
+    );
+    return result.rows.map((row) => ({
+      id: String(row.reader_id),
+      fullName: row.full_name,
+      ticketNumber: row.ticket_number,
+      isArchived: row.archived_at !== null,
+    }));
+  }
+
+  async createReader(reader, actorId, ticketIssuedOn) {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      if (!(await validateActiveClass(client, reader.classId))) {
+        await client.query('ROLLBACK');
+        return { status: 'class_unavailable' };
+      }
+      const ticketNumber =
+        reader.ticketType === 'electronic'
+          ? await generateTicketNumber(client)
+          : reader.ticketNumber;
+      const readerResult = await client.query('INSERT INTO readers DEFAULT VALUES RETURNING id');
+      const readerId = String(readerResult.rows[0].id);
+      await client.query(
+        `INSERT INTO reader_personal_data (
+           reader_id, full_name, category, class_id, phone, address,
+           ticket_number, ticket_type, ticket_issued_on, ticket_expires_on
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+        [
+          readerId,
+          reader.fullName,
+          reader.category,
+          reader.classId,
+          reader.phone,
+          reader.address,
+          ticketNumber,
+          reader.ticketType,
+          reader.ticketType === 'electronic' ? ticketIssuedOn : null,
+          reader.ticketExpiresOn,
+        ],
+      );
+      await client.query(
+        `INSERT INTO reader_personal_data_changes (
+           reader_id, event_type, old_value, new_value, actor_id
+         ) VALUES ($1, 'created', NULL, $2, $3)`,
+        [readerId, JSON.stringify({ ...reader, ticketNumber }), actorId],
+      );
+      await client.query('COMMIT');
+      return { status: 'created', readerId };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async updateReader(readerId, reader, { actorId, reason, expectedTicketNumber }) {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const current = await client.query(
+        `SELECT * FROM reader_personal_data WHERE reader_id = $1 FOR UPDATE`,
+        [readerId],
+      );
+      if (!current.rowCount) {
+        await client.query('ROLLBACK');
+        return { status: 'not_found' };
+      }
+      if (current.rows[0].ticket_number !== expectedTicketNumber) {
+        await client.query('ROLLBACK');
+        return { status: 'ticket_changed' };
+      }
+      const currentClassId =
+        current.rows[0].class_id === null ? null : String(current.rows[0].class_id);
+      if (currentClassId !== reader.classId && !(await validateActiveClass(client, reader.classId))) {
+        await client.query('ROLLBACK');
+        return { status: 'class_unavailable' };
+      }
+
+      const oldValue = snapshot(current.rows[0]);
+      const newValue = {
+        fullName: reader.fullName,
+        category: reader.category,
+        classId: reader.classId,
+        phone: reader.phone,
+        address: reader.address,
+        ticketNumber: reader.ticketNumber,
+        ticketType: current.rows[0].ticket_type,
+        ticketIssuedOn: current.rows[0].ticket_issued_on,
+        ticketExpiresOn: reader.ticketExpiresOn,
+      };
+      if (JSON.stringify(oldValue) === JSON.stringify(newValue)) {
+        await client.query('COMMIT');
+        return { status: 'unchanged' };
+      }
+
+      await client.query(
+        `UPDATE reader_personal_data
+         SET full_name = $2, category = $3, class_id = $4, phone = $5,
+             address = $6, ticket_number = $7, ticket_expires_on = $8,
+             version = version + 1
+         WHERE reader_id = $1`,
+        [
+          readerId,
+          reader.fullName,
+          reader.category,
+          reader.classId,
+          reader.phone,
+          reader.address,
+          reader.ticketNumber,
+          reader.ticketExpiresOn,
+        ],
+      );
+      await client.query(
+        `INSERT INTO reader_personal_data_changes (
+           reader_id, event_type, old_value, new_value, reason, actor_id
+         ) VALUES ($1, 'updated', $2, $3, $4, $5)`,
+        [readerId, JSON.stringify(oldValue), JSON.stringify(newValue), reason || null, actorId],
+      );
+      await client.query('COMMIT');
+      return { status: 'updated' };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+}

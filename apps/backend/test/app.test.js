@@ -323,3 +323,52 @@ test('manager can create a school class', async () => {
   assert.equal(response.status, 201);
   assert.deepEqual(received, { name: '11-Б' });
 });
+
+test('reader create route passes JSON and the actor to the reader service', async () => {
+  const actor = { id: '2', role: 'librarian' };
+  const authService = {
+    authenticateToken: async () => actor,
+    login: async () => {},
+    logout: async () => {},
+  };
+  let received;
+  const readerService = {
+    createReader: async (input, requestActor) => {
+      received = { input, actor: requestActor };
+      return { id: '12', ...input };
+    },
+  };
+  const baseUrl = await startTestServer(
+    { query: async () => ({}) },
+    {
+      services: {
+        authService,
+        catalogService: {},
+        copyService: {},
+        schoolClassService: {},
+        readerService,
+      },
+    },
+  );
+  const input = {
+    fullName: 'Іваненко Іван',
+    category: 'student',
+    classId: '3',
+    phone: '+380501234567',
+    ticketType: 'existing',
+    ticketNumber: 'T-12',
+    ticketExpiresOn: '2027-06-30',
+  };
+
+  const response = await fetch(`${baseUrl}/api/v1/readers`, {
+    method: 'POST',
+    headers: {
+      Cookie: 'obriy_session=test-session',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(input),
+  });
+
+  assert.equal(response.status, 201);
+  assert.deepEqual(received, { input, actor });
+});

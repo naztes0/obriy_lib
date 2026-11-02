@@ -12,6 +12,9 @@ import { CopyRepository } from './modules/copies/copy-repository.js';
 import { registerCopyRoutes } from './modules/copies/copy-routes.js';
 import { CopyService } from './modules/copies/copy-service.js';
 import { registerHealthRoutes } from './modules/health/health-routes.js';
+import { ReaderRepository } from './modules/readers/reader-repository.js';
+import { registerReaderRoutes } from './modules/readers/reader-routes.js';
+import { ReaderService } from './modules/readers/reader-service.js';
 import { SchoolClassRepository } from './modules/school-classes/school-class-repository.js';
 import { registerSchoolClassRoutes } from './modules/school-classes/school-class-routes.js';
 import { SchoolClassService } from './modules/school-classes/school-class-service.js';
@@ -31,6 +34,7 @@ export function createApp({ pool, config = {}, logger = console, services = {} }
   const copyService = services.copyService ?? new CopyService(new CopyRepository(pool));
   const schoolClassService =
     services.schoolClassService ?? new SchoolClassService(new SchoolClassRepository(pool));
+  const readerService = services.readerService ?? new ReaderService(new ReaderRepository(pool));
 
   const router = new Router();
   registerHealthRoutes(router, { pool, logger });
@@ -42,6 +46,7 @@ export function createApp({ pool, config = {}, logger = console, services = {} }
   registerCatalogRoutes(router, { authService, catalogService });
   registerCopyRoutes(router, { authService, copyService });
   registerSchoolClassRoutes(router, { authService, schoolClassService });
+  registerReaderRoutes(router, { authService, readerService });
 
   return async function handleRequest(request, response) {
     const requestId = randomUUID();
