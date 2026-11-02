@@ -1,0 +1,9 @@
+.env
+/project_info
+node_modules/
+.pnpm-store/
+dist/
+coverage/
+.env.*
+!.env.example
+README.md

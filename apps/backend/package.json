@@ -1,0 +1,16 @@
+{
+  "name": "@obriy/backend",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node --env-file=../../.env --watch src/main.js",
+    "start": "node --env-file=../../.env src/main.js",
+    "db:migrate": "node --env-file=../../.env scripts/migrate.js",
+    "db:bootstrap": "node --env-file=../../.env scripts/bootstrap-manager.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "pg": "^8.16.3"
+  }
+}

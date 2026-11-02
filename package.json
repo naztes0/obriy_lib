@@ -1,0 +1,12 @@
+{
+  "name": "obriy-lib",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@11.25.0",
+  "scripts": {
+    "dev:backend": "pnpm --filter @obriy/backend dev",
+    "db:migrate": "pnpm --filter @obriy/backend db:migrate",
+    "db:bootstrap": "pnpm --filter @obriy/backend db:bootstrap",
+    "test": "pnpm --filter @obriy/backend test"
+  }
+}
