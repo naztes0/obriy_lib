@@ -12,6 +12,9 @@ import { CopyRepository } from './modules/copies/copy-repository.js';
 import { registerCopyRoutes } from './modules/copies/copy-routes.js';
 import { CopyService } from './modules/copies/copy-service.js';
 import { registerHealthRoutes } from './modules/health/health-routes.js';
+import { LoanRepository } from './modules/loans/loan-repository.js';
+import { registerLoanRoutes } from './modules/loans/loan-routes.js';
+import { LoanService } from './modules/loans/loan-service.js';
 import { ReaderRepository } from './modules/readers/reader-repository.js';
 import { registerReaderRoutes } from './modules/readers/reader-routes.js';
 import { ReaderService } from './modules/readers/reader-service.js';
@@ -35,6 +38,7 @@ export function createApp({ pool, config = {}, logger = console, services = {} }
   const schoolClassService =
     services.schoolClassService ?? new SchoolClassService(new SchoolClassRepository(pool));
   const readerService = services.readerService ?? new ReaderService(new ReaderRepository(pool));
+  const loanService = services.loanService ?? new LoanService(new LoanRepository(pool));
 
   const router = new Router();
   registerHealthRoutes(router, { pool, logger });
@@ -47,6 +51,7 @@ export function createApp({ pool, config = {}, logger = console, services = {} }
   registerCopyRoutes(router, { authService, copyService });
   registerSchoolClassRoutes(router, { authService, schoolClassService });
   registerReaderRoutes(router, { authService, readerService });
+  registerLoanRoutes(router, { authService, loanService });
 
   return async function handleRequest(request, response) {
     const requestId = randomUUID();

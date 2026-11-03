@@ -372,3 +372,46 @@ test('reader create route passes JSON and the actor to the reader service', asyn
   assert.equal(response.status, 201);
   assert.deepEqual(received, { input, actor });
 });
+
+test('loan issue route passes JSON, actor and idempotency key', async () => {
+  const actor = { id: '2', role: 'librarian' };
+  const authService = {
+    authenticateToken: async () => actor,
+    login: async () => {},
+    logout: async () => {},
+  };
+  let received;
+  const loanService = {
+    issueLoan: async (input, requestActor, key) => {
+      received = { input, actor: requestActor, key };
+      return { id: '30', status: 'issued' };
+    },
+  };
+  const baseUrl = await startTestServer(
+    { query: async () => ({}) },
+    {
+      services: {
+        authService,
+        catalogService: {},
+        copyService: {},
+        schoolClassService: {},
+        readerService: {},
+        loanService,
+      },
+    },
+  );
+  const input = { readerId: '4', copyId: '8' };
+
+  const response = await fetch(`${baseUrl}/api/v1/loans`, {
+    method: 'POST',
+    headers: {
+      Cookie: 'obriy_session=test-session',
+      'Content-Type': 'application/json',
+      'Idempotency-Key': 'issue-request-http-1',
+    },
+    body: JSON.stringify(input),
+  });
+
+  assert.equal(response.status, 201);
+  assert.deepEqual(received, { input, actor, key: 'issue-request-http-1' });
+});
