@@ -88,13 +88,14 @@ test('loan return validates and passes the physical condition', async () => {
 
   const result = await service.returnLoan(
     '20',
-    { condition: 'worn', defectDescription: 'Потерта обкладинка' },
+    { version: '1', condition: 'worn', defectDescription: 'Потерта обкладинка' },
     actor,
     'return-request-1',
   );
 
   assert.deepEqual(received, {
     loanId: '20',
+    version: '1',
     condition: 'worn',
     defectDescription: 'Потерта обкладинка',
     actorId: '1',
@@ -107,8 +108,96 @@ test('damaged return requires a defect description', async () => {
   const service = new LoanService({});
 
   await assert.rejects(
-    service.returnLoan('20', { condition: 'damaged' }, actor, 'return-request-2'),
+    service.returnLoan('20', { version: '1', condition: 'damaged' }, actor, 'return-request-2'),
     (error) =>
       error.code === 'VALIDATION_ERROR' && Boolean(error.details.fields.defectDescription),
   );
+});
+
+test('loan extension passes the date, reason, version and current Kyiv date', async () => {
+  let received;
+  const repository = {
+    extendLoan: async (loanId, input) => {
+      received = { loanId, ...input };
+      return { status: 'extended', loanId };
+    },
+    findById: async () => ({ id: '20', status: 'issued', currentDueDate: '2026-12-20' }),
+  };
+  const service = new LoanService(repository, {
+    now: () => new Date('2026-11-03T10:00:00.000Z'),
+  });
+
+  await service.extendLoan(
+    '20',
+    { version: '1', newDueDate: '2026-12-20', reason: 'Потрібно для навчання' },
+    actor,
+    'extend-request-1',
+  );
+
+  assert.deepEqual(received, {
+    loanId: '20',
+    version: '1',
+    newDueDate: '2026-12-20',
+    reason: 'Потрібно для навчання',
+    today: '2026-11-03',
+    actorId: '1',
+    requestKey: 'extend-request-1',
+  });
+});
+
+test('loan loss passes the current version and comment', async () => {
+  let received;
+  const repository = {
+    markLoanLost: async (loanId, input) => {
+      received = { loanId, ...input };
+      return { status: 'lost', loanId };
+    },
+    findById: async () => ({ id: '20', status: 'lost', version: '2' }),
+  };
+  const service = new LoanService(repository);
+
+  const result = await service.markLoanLost(
+    '20',
+    { version: '1', comment: 'Читач повідомив про втрату' },
+    actor,
+    'loss-request-1',
+  );
+
+  assert.equal(received.version, '1');
+  assert.equal(received.comment, 'Читач повідомив про втрату');
+  assert.equal(result.status, 'lost');
+});
+
+test('compensation rejects a stale version', async () => {
+  const service = new LoanService({
+    compensateLoan: async () => ({ status: 'version_conflict' }),
+  });
+
+  await assert.rejects(
+    service.compensateLoan(
+      '20',
+      { version: '1', comment: 'Відшкодовано' },
+      actor,
+      'compensate-request-1',
+    ),
+    (error) => error.code === 'VERSION_CONFLICT' && error.status === 409,
+  );
+});
+
+test('found copy requires a reason and returns its new state', async () => {
+  const repository = {
+    markCopyFound: async () => ({ status: 'found', copyId: '8' }),
+    findCopyById: async () => ({ id: '8', isLost: false, version: '4' }),
+  };
+  const service = new LoanService(repository);
+
+  const result = await service.markCopyFound(
+    '8',
+    { version: '3', reason: 'Примірник знайдено у фонді' },
+    actor,
+    'found-request-1',
+  );
+
+  assert.equal(result.isLost, false);
+  assert.equal(result.version, '4');
 });

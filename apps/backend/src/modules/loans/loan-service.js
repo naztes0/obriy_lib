@@ -1,8 +1,11 @@
 import { AppError } from '../../http/app-error.js';
 import {
   validateIdempotencyKey,
+  validateCopyFound,
+  validateLoanExtension,
   validateLoanIssue,
   validateLoanReturn,
+  validateLoanStatusChange,
 } from './loan-input.js';
 
 function dateInKyiv(now) {
@@ -26,6 +29,20 @@ function validateLoanId(loanId) {
   if (!/^[1-9][0-9]*$/.test(loanId)) {
     throw new AppError(400, 'INVALID_LOAN_ID', 'Некоректний ідентифікатор видачі.');
   }
+}
+
+function validateCopyId(copyId) {
+  if (!/^[1-9][0-9]*$/.test(copyId)) {
+    throw new AppError(400, 'INVALID_COPY_ID', 'Некоректний ідентифікатор примірника.');
+  }
+}
+
+function versionConflict() {
+  return new AppError(
+    409,
+    'VERSION_CONFLICT',
+    'Запис уже змінився. Оновіть дані та повторіть дію.',
+  );
 }
 
 const ISSUE_ERRORS = {
@@ -116,6 +133,108 @@ export class LoanService {
         'Цю видачу не можна повернути звичайною операцією.',
       );
     }
+    if (result.status === 'version_conflict') throw versionConflict();
     return await this.getLoan(result.loanId);
+  }
+
+  async extendLoan(loanId, input, actor, idempotencyKey) {
+    validateLoanId(loanId);
+    const values = validateLoanExtension(input);
+    const requestKey = validateIdempotencyKey(idempotencyKey);
+    const result = await this.repository.extendLoan(loanId, {
+      ...values,
+      today: dateInKyiv(this.now()),
+      actorId: actor.id,
+      requestKey,
+    });
+    const errors = {
+      loan_not_found: [404, 'LOAN_NOT_FOUND', 'Видачу не знайдено.'],
+      invalid_status: [422, 'LOAN_NOT_EXTENDABLE', 'Цю видачу не можна продовжити.'],
+      reader_unavailable: [422, 'READER_UNAVAILABLE', 'Картка читача неактивна або видалена.'],
+      extension_period_ended: [422, 'EXTENSION_PERIOD_ENDED', 'Поточний строк видачі вже завершився.'],
+      already_extended: [409, 'LOAN_ALREADY_EXTENDED', 'Цю видачу вже продовжували.'],
+      invalid_extension_date: [
+        422,
+        'INVALID_EXTENSION_DATE',
+        'Новий строк має бути пізнішим і не більш як на 30 днів.',
+      ],
+      ticket_limit_exceeded: [
+        422,
+        'READER_TICKET_LIMIT_EXCEEDED',
+        'Новий строк не може бути пізнішим за завершення учнівського квитка.',
+      ],
+      reader_overdue: [422, 'READER_HAS_OVERDUE_LOANS', 'Читач має прострочені видачі.'],
+      reader_has_loss: [422, 'READER_HAS_UNRESOLVED_LOSS', 'Читач має неврегульовану втрату.'],
+    };
+    if (result.status === 'version_conflict') throw versionConflict();
+    if (errors[result.status]) {
+      const [status, code, message] = errors[result.status];
+      throw new AppError(status, code, message);
+    }
+    return await this.getLoan(result.loanId);
+  }
+
+  async markLoanLost(loanId, input, actor, idempotencyKey) {
+    validateLoanId(loanId);
+    const values = validateLoanStatusChange(input);
+    const requestKey = validateIdempotencyKey(idempotencyKey);
+    const result = await this.repository.markLoanLost(loanId, {
+      ...values,
+      actorId: actor.id,
+      requestKey,
+    });
+    if (result.status === 'loan_not_found') {
+      throw new AppError(404, 'LOAN_NOT_FOUND', 'Видачу не знайдено.');
+    }
+    if (result.status === 'invalid_status') {
+      throw new AppError(422, 'LOAN_STATUS_NOT_LOSTABLE', 'Цю видачу не можна позначити втраченою.');
+    }
+    if (result.status === 'version_conflict') throw versionConflict();
+    return await this.getLoan(result.loanId);
+  }
+
+  async compensateLoan(loanId, input, actor, idempotencyKey) {
+    validateLoanId(loanId);
+    const values = validateLoanStatusChange(input);
+    const requestKey = validateIdempotencyKey(idempotencyKey);
+    const result = await this.repository.compensateLoan(loanId, {
+      ...values,
+      actorId: actor.id,
+      requestKey,
+    });
+    if (result.status === 'loan_not_found') {
+      throw new AppError(404, 'LOAN_NOT_FOUND', 'Видачу не знайдено.');
+    }
+    if (result.status === 'invalid_status') {
+      throw new AppError(422, 'LOAN_STATUS_NOT_COMPENSATABLE', 'Відшкодувати можна лише втрату.');
+    }
+    if (result.status === 'version_conflict') throw versionConflict();
+    return await this.getLoan(result.loanId);
+  }
+
+  async markCopyFound(copyId, input, actor, idempotencyKey) {
+    validateCopyId(copyId);
+    const values = validateCopyFound(input);
+    const requestKey = validateIdempotencyKey(idempotencyKey);
+    const result = await this.repository.markCopyFound(copyId, {
+      ...values,
+      actorId: actor.id,
+      requestKey,
+    });
+    if (result.status === 'copy_not_found') {
+      throw new AppError(404, 'COPY_NOT_FOUND', 'Примірник не знайдено.');
+    }
+    if (result.status === 'copy_not_lost') {
+      throw new AppError(422, 'COPY_NOT_LOST', 'Примірник не позначений втраченим.');
+    }
+    if (result.status === 'copy_has_open_loan') {
+      throw new AppError(
+        422,
+        'COPY_HAS_OPEN_LOAN',
+        'Спочатку поверніть примірник у межах чинної видачі.',
+      );
+    }
+    if (result.status === 'version_conflict') throw versionConflict();
+    return await this.repository.findCopyById(result.copyId);
   }
 }

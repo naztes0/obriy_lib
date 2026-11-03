@@ -21,6 +21,28 @@ function readId(value, field, errors) {
   return normalized;
 }
 
+function readVersion(value, errors) {
+  const normalized = Number.isSafeInteger(value) ? String(value) : value;
+  if (typeof normalized !== 'string' || !/^[1-9][0-9]*$/.test(normalized)) {
+    errors.version = 'Передайте поточну додатну версію запису.';
+    return undefined;
+  }
+  return normalized;
+}
+
+function readReason(value, field, errors) {
+  if (typeof value !== 'string') {
+    errors[field] = 'Вкажіть причину.';
+    return undefined;
+  }
+  const result = value.trim().replace(/\s+/gu, ' ');
+  if (!result || result.length > 500) {
+    errors[field] = 'Вкажіть причину довжиною від 1 до 500 символів.';
+    return undefined;
+  }
+  return result;
+}
+
 export function isValidDate(value) {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const date = new Date(`${value}T00:00:00.000Z`);
@@ -47,6 +69,7 @@ export function validateLoanIssue(input) {
 export function validateLoanReturn(input) {
   requireObject(input);
   const errors = {};
+  const version = readVersion(input.version, errors);
   if (!CONDITIONS.has(input.condition)) {
     errors.condition = 'Допустимі значення: good, worn або damaged.';
   }
@@ -67,9 +90,50 @@ export function validateLoanReturn(input) {
   }
   if (Object.keys(errors).length) validationError(errors);
   return {
+    version,
     condition: input.condition,
     defectDescription: description || null,
   };
+}
+
+export function validateLoanExtension(input) {
+  requireObject(input);
+  const errors = {};
+  const version = readVersion(input.version, errors);
+  if (!isValidDate(input.newDueDate)) {
+    errors.newDueDate = 'Вкажіть коректну дату у форматі YYYY-MM-DD.';
+  }
+  const reason = readReason(input.reason, 'reason', errors);
+  if (Object.keys(errors).length) validationError(errors);
+  return { version, newDueDate: input.newDueDate, reason };
+}
+
+export function validateLoanStatusChange(input) {
+  requireObject(input);
+  const errors = {};
+  const version = readVersion(input.version, errors);
+  let comment = null;
+  if (input.comment !== undefined && input.comment !== null && input.comment !== '') {
+    if (typeof input.comment !== 'string') {
+      errors.comment = 'Передайте текст або null.';
+    } else {
+      comment = input.comment.trim().replace(/\s+/gu, ' ');
+      if (!comment || comment.length > 500) {
+        errors.comment = 'Коментар не може містити більше 500 символів.';
+      }
+    }
+  }
+  if (Object.keys(errors).length) validationError(errors);
+  return { version, comment };
+}
+
+export function validateCopyFound(input) {
+  requireObject(input);
+  const errors = {};
+  const version = readVersion(input.version, errors);
+  const reason = readReason(input.reason, 'reason', errors);
+  if (Object.keys(errors).length) validationError(errors);
+  return { version, reason };
 }
 
 export function validateIdempotencyKey(value) {

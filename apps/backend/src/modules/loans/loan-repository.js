@@ -22,12 +22,21 @@ function mapLoan(row) {
     initialDueDate: toDateOnly(row.initial_due_date),
     currentDueDate: toDateOnly(row.current_due_date),
     returnedAt: row.returned_at,
+    compensatedAt: row.compensated_at,
     issueCondition: row.issue_condition,
     issueDefectDescription: row.issue_defect_snapshot,
     returnCondition: row.return_condition,
     returnDefectDescription: row.return_defect_snapshot,
     readerCategoryAtIssue: row.reader_category_snapshot,
     classNameAtIssue: row.class_name_snapshot,
+    extension: row.extension_old_due_date
+      ? {
+          oldDueDate: toDateOnly(row.extension_old_due_date),
+          newDueDate: toDateOnly(row.extension_new_due_date),
+          reason: row.extension_reason,
+          occurredAt: row.extension_occurred_at,
+        }
+      : null,
     version: String(row.version),
   };
 }
@@ -65,15 +74,37 @@ export class LoanRepository {
   async findById(loanId) {
     const result = await this.pool.query(
       `SELECT l.*, rpd.full_name, rpd.ticket_number,
-              b.id AS book_id, b.title, bc.inventory_number
+              b.id AS book_id, b.title, bc.inventory_number,
+              le.old_due_date AS extension_old_due_date,
+              le.new_due_date AS extension_new_due_date,
+              le.reason AS extension_reason,
+              le.occurred_at AS extension_occurred_at
        FROM loans l
        LEFT JOIN reader_personal_data rpd ON rpd.reader_id = l.reader_id
        JOIN book_copies bc ON bc.id = l.copy_id
        JOIN books b ON b.id = bc.book_id
+       LEFT JOIN loan_extensions le ON le.loan_id = l.id
        WHERE l.id = $1`,
       [loanId],
     );
     return result.rowCount ? mapLoan(result.rows[0]) : null;
+  }
+
+  async findCopyById(copyId) {
+    const result = await this.pool.query(
+      `SELECT id, is_lost, condition, defect_description, version
+       FROM book_copies WHERE id = $1`,
+      [copyId],
+    );
+    if (!result.rowCount) return null;
+    const row = result.rows[0];
+    return {
+      id: String(row.id),
+      isLost: row.is_lost,
+      condition: row.condition,
+      defectDescription: row.defect_description,
+      version: String(row.version),
+    };
   }
 
   async issueLoan({ readerId, copyId, issueDate, defaultDueDate, requestedDueDate, actorId, requestKey }) {
@@ -185,7 +216,7 @@ export class LoanRepository {
     }
   }
 
-  async returnLoan(loanId, { condition, defectDescription, actorId, requestKey }) {
+  async returnLoan(loanId, { version, condition, defectDescription, actorId, requestKey }) {
     const client = await this.pool.connect();
     const operation = `return_loan:${loanId}`;
     try {
@@ -196,7 +227,7 @@ export class LoanRepository {
         return { status: 'repeated', loanId: reservation.resultId };
       }
       const current = await client.query(
-        `SELECT l.status, l.copy_id, bc.condition, bc.defect_description
+        `SELECT l.status, l.version, l.copy_id, bc.condition, bc.defect_description, bc.is_lost
          FROM loans l JOIN book_copies bc ON bc.id = l.copy_id
          WHERE l.id = $1 FOR UPDATE OF l, bc`,
         [loanId],
@@ -208,7 +239,10 @@ export class LoanRepository {
         await client.query('COMMIT');
         return { status: 'already_returned', loanId };
       }
-      if (row.status !== 'issued') return await this.rollbackStatus(client, 'invalid_status');
+      if (!['issued', 'lost'].includes(row.status)) {
+        return await this.rollbackStatus(client, 'invalid_status');
+      }
+      if (String(row.version) !== version) return await this.rollbackStatus(client, 'version_conflict');
 
       await client.query(
         `UPDATE loans
@@ -219,15 +253,15 @@ export class LoanRepository {
       );
       await client.query(
         `UPDATE book_copies
-         SET condition = $2, defect_description = $3, version = version + 1
+         SET condition = $2, defect_description = $3, is_lost = false, version = version + 1
          WHERE id = $1`,
         [row.copy_id, condition, defectDescription],
       );
       await client.query(
         `INSERT INTO loan_status_events (
            loan_id, from_status, to_status, actor_id, request_key
-         ) VALUES ($1, 'issued', 'returned', $2, $3)`,
-        [loanId, actorId, requestKey],
+         ) VALUES ($1, $2, 'returned', $3, $4)`,
+        [loanId, row.status, actorId, requestKey],
       );
       await client.query(
         `INSERT INTO book_copy_events (
@@ -235,8 +269,12 @@ export class LoanRepository {
          ) VALUES ($1, 'returned', $2, $3, $4, $5, $6)`,
         [
           row.copy_id,
-          JSON.stringify({ condition: row.condition, defectDescription: row.defect_description }),
-          JSON.stringify({ condition, defectDescription }),
+          JSON.stringify({
+            condition: row.condition,
+            defectDescription: row.defect_description,
+            isLost: row.is_lost,
+          }),
+          JSON.stringify({ condition, defectDescription, isLost: false }),
           actorId,
           loanId,
           requestKey,
@@ -245,6 +283,248 @@ export class LoanRepository {
       await completeRequest(client, { actorId, operation, requestKey, resultId: loanId });
       await client.query('COMMIT');
       return { status: 'returned', loanId };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async extendLoan(loanId, { version, newDueDate, reason, today, actorId, requestKey }) {
+    const client = await this.pool.connect();
+    const operation = `extend_loan:${loanId}`;
+    try {
+      await client.query('BEGIN');
+      const reservation = await reserveRequest(client, { actorId, operation, requestKey });
+      if (!reservation.isNew) {
+        await client.query('COMMIT');
+        return { status: 'repeated', loanId: reservation.resultId };
+      }
+      const current = await client.query(
+        `SELECT l.status, l.version, l.reader_id, l.current_due_date,
+                rpd.category, rpd.ticket_expires_on, rpd.archived_at
+         FROM loans l
+         LEFT JOIN reader_personal_data rpd ON rpd.reader_id = l.reader_id
+         WHERE l.id = $1 FOR UPDATE OF l`,
+        [loanId],
+      );
+      if (!current.rowCount) return await this.rollbackStatus(client, 'loan_not_found');
+      const row = current.rows[0];
+      if (row.status !== 'issued') return await this.rollbackStatus(client, 'invalid_status');
+      if (String(row.version) !== version) return await this.rollbackStatus(client, 'version_conflict');
+      if (row.category === null || row.archived_at !== null) {
+        return await this.rollbackStatus(client, 'reader_unavailable');
+      }
+      const oldDueDate = toDateOnly(row.current_due_date);
+      if (today > oldDueDate) return await this.rollbackStatus(client, 'extension_period_ended');
+      const existingExtension = await client.query(
+        'SELECT 1 FROM loan_extensions WHERE loan_id = $1',
+        [loanId],
+      );
+      if (existingExtension.rowCount) return await this.rollbackStatus(client, 'already_extended');
+
+      const maximumDueDate = new Date(`${oldDueDate}T00:00:00.000Z`);
+      maximumDueDate.setUTCDate(maximumDueDate.getUTCDate() + 30);
+      const maximum = maximumDueDate.toISOString().slice(0, 10);
+      if (newDueDate <= oldDueDate || newDueDate > maximum) {
+        return await this.rollbackStatus(client, 'invalid_extension_date');
+      }
+      const ticketExpiresOn = toDateOnly(row.ticket_expires_on);
+      if (row.category === 'student' && newDueDate > ticketExpiresOn) {
+        return await this.rollbackStatus(client, 'ticket_limit_exceeded');
+      }
+      const obligations = await client.query(
+        `SELECT
+           EXISTS (
+             SELECT 1 FROM loans
+             WHERE reader_id = $1 AND status = 'issued' AND current_due_date < $2::date
+           ) AS has_overdue,
+           EXISTS (
+             SELECT 1 FROM loans WHERE reader_id = $1 AND status = 'lost'
+           ) AS has_loss`,
+        [row.reader_id, today],
+      );
+      if (obligations.rows[0].has_overdue) return await this.rollbackStatus(client, 'reader_overdue');
+      if (obligations.rows[0].has_loss) return await this.rollbackStatus(client, 'reader_has_loss');
+
+      await client.query(
+        `INSERT INTO loan_extensions (
+           loan_id, old_due_date, new_due_date, reason, actor_id, request_key
+         ) VALUES ($1, $2, $3, $4, $5, $6)`,
+        [loanId, oldDueDate, newDueDate, reason, actorId, requestKey],
+      );
+      await client.query(
+        `UPDATE loans SET current_due_date = $2, version = version + 1 WHERE id = $1`,
+        [loanId, newDueDate],
+      );
+      await completeRequest(client, { actorId, operation, requestKey, resultId: loanId });
+      await client.query('COMMIT');
+      return { status: 'extended', loanId };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async markLoanLost(loanId, { version, comment, actorId, requestKey }) {
+    const client = await this.pool.connect();
+    const operation = `lose_loan:${loanId}`;
+    try {
+      await client.query('BEGIN');
+      const reservation = await reserveRequest(client, { actorId, operation, requestKey });
+      if (!reservation.isNew) {
+        await client.query('COMMIT');
+        return { status: 'repeated', loanId: reservation.resultId };
+      }
+      const current = await client.query(
+        `SELECT l.status, l.version, l.copy_id, bc.is_lost
+         FROM loans l JOIN book_copies bc ON bc.id = l.copy_id
+         WHERE l.id = $1 FOR UPDATE OF l, bc`,
+        [loanId],
+      );
+      if (!current.rowCount) return await this.rollbackStatus(client, 'loan_not_found');
+      const row = current.rows[0];
+      if (row.status === 'lost') {
+        await completeRequest(client, { actorId, operation, requestKey, resultId: loanId });
+        await client.query('COMMIT');
+        return { status: 'already_lost', loanId };
+      }
+      if (row.status !== 'issued') return await this.rollbackStatus(client, 'invalid_status');
+      if (String(row.version) !== version) return await this.rollbackStatus(client, 'version_conflict');
+
+      await client.query(
+        `UPDATE loans SET status = 'lost', version = version + 1 WHERE id = $1`,
+        [loanId],
+      );
+      await client.query(
+        `UPDATE book_copies SET is_lost = true, version = version + 1 WHERE id = $1`,
+        [row.copy_id],
+      );
+      await client.query(
+        `INSERT INTO loan_status_events (
+           loan_id, from_status, to_status, actor_id, comment, request_key
+         ) VALUES ($1, 'issued', 'lost', $2, $3, $4)`,
+        [loanId, actorId, comment, requestKey],
+      );
+      await client.query(
+        `INSERT INTO book_copy_events (
+           copy_id, kind, old_value, new_value, reason, actor_id, loan_id, request_key
+         ) VALUES ($1, 'lost', $2, $3, $4, $5, $6, $7)`,
+        [
+          row.copy_id,
+          JSON.stringify({ isLost: row.is_lost }),
+          JSON.stringify({ isLost: true }),
+          comment,
+          actorId,
+          loanId,
+          requestKey,
+        ],
+      );
+      await completeRequest(client, { actorId, operation, requestKey, resultId: loanId });
+      await client.query('COMMIT');
+      return { status: 'lost', loanId };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async compensateLoan(loanId, { version, comment, actorId, requestKey }) {
+    const client = await this.pool.connect();
+    const operation = `compensate_loan:${loanId}`;
+    try {
+      await client.query('BEGIN');
+      const reservation = await reserveRequest(client, { actorId, operation, requestKey });
+      if (!reservation.isNew) {
+        await client.query('COMMIT');
+        return { status: 'repeated', loanId: reservation.resultId };
+      }
+      const current = await client.query(
+        'SELECT status, version FROM loans WHERE id = $1 FOR UPDATE',
+        [loanId],
+      );
+      if (!current.rowCount) return await this.rollbackStatus(client, 'loan_not_found');
+      const row = current.rows[0];
+      if (row.status === 'compensated') {
+        await completeRequest(client, { actorId, operation, requestKey, resultId: loanId });
+        await client.query('COMMIT');
+        return { status: 'already_compensated', loanId };
+      }
+      if (row.status !== 'lost') return await this.rollbackStatus(client, 'invalid_status');
+      if (String(row.version) !== version) return await this.rollbackStatus(client, 'version_conflict');
+
+      await client.query(
+        `UPDATE loans
+         SET status = 'compensated', compensated_at = now(), version = version + 1
+         WHERE id = $1`,
+        [loanId],
+      );
+      await client.query(
+        `INSERT INTO loan_status_events (
+           loan_id, from_status, to_status, actor_id, comment, request_key
+         ) VALUES ($1, 'lost', 'compensated', $2, $3, $4)`,
+        [loanId, actorId, comment, requestKey],
+      );
+      await completeRequest(client, { actorId, operation, requestKey, resultId: loanId });
+      await client.query('COMMIT');
+      return { status: 'compensated', loanId };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async markCopyFound(copyId, { version, reason, actorId, requestKey }) {
+    const client = await this.pool.connect();
+    const operation = `find_copy:${copyId}`;
+    try {
+      await client.query('BEGIN');
+      const reservation = await reserveRequest(client, { actorId, operation, requestKey });
+      if (!reservation.isNew) {
+        await client.query('COMMIT');
+        return { status: 'repeated', copyId: reservation.resultId };
+      }
+      const current = await client.query(
+        `SELECT id, is_lost, version FROM book_copies WHERE id = $1 FOR UPDATE`,
+        [copyId],
+      );
+      if (!current.rowCount) return await this.rollbackStatus(client, 'copy_not_found');
+      const row = current.rows[0];
+      if (!row.is_lost) return await this.rollbackStatus(client, 'copy_not_lost');
+      if (String(row.version) !== version) return await this.rollbackStatus(client, 'version_conflict');
+      const openLoan = await client.query(
+        `SELECT 1 FROM loans WHERE copy_id = $1 AND status IN ('issued', 'lost') LIMIT 1`,
+        [copyId],
+      );
+      if (openLoan.rowCount) return await this.rollbackStatus(client, 'copy_has_open_loan');
+
+      await client.query(
+        `UPDATE book_copies SET is_lost = false, version = version + 1 WHERE id = $1`,
+        [copyId],
+      );
+      await client.query(
+        `INSERT INTO book_copy_events (
+           copy_id, kind, old_value, new_value, reason, actor_id, request_key
+         ) VALUES ($1, 'found', $2, $3, $4, $5, $6)`,
+        [
+          copyId,
+          JSON.stringify({ isLost: true }),
+          JSON.stringify({ isLost: false }),
+          reason,
+          actorId,
+          requestKey,
+        ],
+      );
+      await completeRequest(client, { actorId, operation, requestKey, resultId: copyId });
+      await client.query('COMMIT');
+      return { status: 'found', copyId };
     } catch (error) {
       await client.query('ROLLBACK');
       throw error;
