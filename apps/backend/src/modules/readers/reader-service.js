@@ -2,7 +2,10 @@ import { AppError } from '../../http/app-error.js';
 import { readPagination } from '../../http/pagination.js';
 import {
   normalizeComparableName,
+  validateReaderArchive,
   validateReaderCreate,
+  validateReaderIdempotencyKey,
+  validateReaderRestore,
   validateReaderUpdate,
 } from './reader-input.js';
 
@@ -36,6 +39,14 @@ function namesakeError(matches) {
 
 function ticketNumberExistsError() {
   return new AppError(409, 'TICKET_NUMBER_EXISTS', 'Читач із таким номером квитка вже існує.');
+}
+
+function versionConflict() {
+  return new AppError(
+    409,
+    'VERSION_CONFLICT',
+    'Картка вже змінилася. Оновіть дані та повторіть дію.',
+  );
 }
 
 export class ReaderService {
@@ -130,11 +141,12 @@ export class ReaderService {
       normalizeComparableName(update.values.fullName) !== normalizeComparableName(existing.fullName);
     const ticketChanged = update.values.ticketNumber !== existing.ticketNumber;
 
-    if (existing.isArchived && update.supplied.some((field) => field !== 'ticketNumber')) {
+    const archivedEditableFields = new Set(['ticketNumber', 'ticketExpiresOn']);
+    if (existing.isArchived && update.supplied.some((field) => !archivedEditableFields.has(field))) {
       throw new AppError(
         422,
         'READER_ARCHIVED',
-        'В архівній картці можна виправити лише номер квитка.',
+        'В архівній картці можна змінити лише номер або строк квитка.',
       );
     }
     if (nameChanged) {
@@ -192,5 +204,63 @@ export class ReaderService {
       }
       throw error;
     }
+  }
+
+  async archiveReader(readerId, input, actor, idempotencyKey) {
+    validateReaderId(readerId);
+    const values = validateReaderArchive(input);
+    const requestKey = validateReaderIdempotencyKey(idempotencyKey);
+    const result = await this.repository.archiveReader(readerId, {
+      ...values,
+      actorId: actor.id,
+      requestKey,
+    });
+    const errors = {
+      not_found: [404, 'READER_NOT_FOUND', 'Читача не знайдено.'],
+      already_archived: [422, 'READER_ALREADY_ARCHIVED', 'Картка читача вже в архіві.'],
+      open_loans: [
+        422,
+        'READER_HAS_OPEN_LOANS',
+        'Спочатку поверніть усі примірники або врегулюйте втрати.',
+      ],
+    };
+    if (result.status === 'version_conflict') throw versionConflict();
+    if (errors[result.status]) {
+      const [status, code, message] = errors[result.status];
+      throw new AppError(status, code, message);
+    }
+    return await this.getReader(result.readerId);
+  }
+
+  async restoreReader(readerId, input, actor, idempotencyKey) {
+    validateReaderId(readerId);
+    const values = validateReaderRestore(input);
+    const requestKey = validateReaderIdempotencyKey(idempotencyKey);
+    const result = await this.repository.restoreReader(readerId, {
+      ...values,
+      today: todayInKyiv(this.now()),
+      actorId: actor.id,
+      requestKey,
+    });
+    const errors = {
+      not_found: [404, 'READER_NOT_FOUND', 'Читача не знайдено.'],
+      not_archived: [422, 'READER_NOT_ARCHIVED', 'Картка читача не перебуває в архіві.'],
+      open_loans: [
+        422,
+        'READER_HAS_OPEN_LOANS',
+        'Картку не можна відновити, доки є незавершені видачі.',
+      ],
+      ticket_expired: [
+        422,
+        'READER_TICKET_EXPIRED',
+        'Строк учнівського квитка завершився. Спочатку оновіть строк.',
+      ],
+    };
+    if (result.status === 'version_conflict') throw versionConflict();
+    if (errors[result.status]) {
+      const [status, code, message] = errors[result.status];
+      throw new AppError(status, code, message);
+    }
+    return await this.getReader(result.readerId);
   }
 }

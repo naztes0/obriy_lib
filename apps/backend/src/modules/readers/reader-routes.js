@@ -1,6 +1,6 @@
 import { readJsonBody } from '../../http/request-body.js';
 import { sendData } from '../../http/response.js';
-import { requireAuthentication } from '../auth/auth-guard.js';
+import { requireAuthentication, requireRole } from '../auth/auth-guard.js';
 
 export function registerReaderRoutes(router, { authService, readerService }) {
   router.get(
@@ -37,5 +37,35 @@ export function registerReaderRoutes(router, { authService, readerService }) {
       );
       sendData(response, 200, reader, requestId);
     }),
+  );
+
+  router.post(
+    '/api/v1/readers/:readerId/archive',
+    requireAuthentication(authService, async ({ request, response, requestId, params, actor }) => {
+      const reader = await readerService.archiveReader(
+        params.readerId,
+        await readJsonBody(request),
+        actor,
+        request.headers['idempotency-key'],
+      );
+      sendData(response, 200, reader, requestId);
+    }),
+  );
+
+  router.post(
+    '/api/v1/readers/:readerId/restore',
+    requireRole(
+      authService,
+      ['manager'],
+      async ({ request, response, requestId, params, actor }) => {
+        const reader = await readerService.restoreReader(
+          params.readerId,
+          await readJsonBody(request),
+          actor,
+          request.headers['idempotency-key'],
+        );
+        sendData(response, 200, reader, requestId);
+      },
+    ),
   );
 }

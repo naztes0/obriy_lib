@@ -373,6 +373,88 @@ test('reader create route passes JSON and the actor to the reader service', asyn
   assert.deepEqual(received, { input, actor });
 });
 
+test('reader archive route passes JSON, actor and idempotency key', async () => {
+  const actor = { id: '2', role: 'librarian' };
+  const authService = {
+    authenticateToken: async () => actor,
+    login: async () => {},
+    logout: async () => {},
+  };
+  let received;
+  const readerService = {
+    archiveReader: async (readerId, input, requestActor, key) => {
+      received = { readerId, input, actor: requestActor, key };
+      return { id: readerId, isArchived: true };
+    },
+  };
+  const baseUrl = await startTestServer(
+    { query: async () => ({}) },
+    {
+      services: {
+        authService,
+        catalogService: {},
+        copyService: {},
+        schoolClassService: {},
+        readerService,
+      },
+    },
+  );
+
+  const response = await fetch(`${baseUrl}/api/v1/readers/12/archive`, {
+    method: 'POST',
+    headers: {
+      Cookie: 'obriy_session=test-session',
+      'Content-Type': 'application/json',
+      'Idempotency-Key': 'archive-reader-http-1',
+    },
+    body: JSON.stringify({ version: '3', reason: 'За зверненням' }),
+  });
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(received, {
+    readerId: '12',
+    input: { version: '3', reason: 'За зверненням' },
+    actor,
+    key: 'archive-reader-http-1',
+  });
+});
+
+test('reader restore route is forbidden for a librarian', async () => {
+  const authService = {
+    authenticateToken: async () => ({ id: '2', role: 'librarian' }),
+    login: async () => {},
+    logout: async () => {},
+  };
+  const readerService = {
+    restoreReader: async () => assert.fail('service must not be called'),
+  };
+  const baseUrl = await startTestServer(
+    { query: async () => ({}) },
+    {
+      services: {
+        authService,
+        catalogService: {},
+        copyService: {},
+        schoolClassService: {},
+        readerService,
+      },
+    },
+  );
+
+  const response = await fetch(`${baseUrl}/api/v1/readers/12/restore`, {
+    method: 'POST',
+    headers: {
+      Cookie: 'obriy_session=test-session',
+      'Content-Type': 'application/json',
+      'Idempotency-Key': 'restore-reader-http-1',
+    },
+    body: JSON.stringify({ version: '4' }),
+  });
+
+  assert.equal(response.status, 403);
+  assert.equal((await response.json()).error.code, 'ACCESS_DENIED');
+});
+
 test('loan issue route passes JSON, actor and idempotency key', async () => {
   const actor = { id: '2', role: 'librarian' };
   const authService = {

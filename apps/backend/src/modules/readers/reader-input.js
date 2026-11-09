@@ -187,3 +187,40 @@ export function validateReaderUpdate(input, existing) {
     reason: typeof input.reason === 'string' ? cleanText(input.reason) : '',
   };
 }
+
+function readVersion(value, errors) {
+  const normalized = Number.isSafeInteger(value) ? String(value) : value;
+  if (typeof normalized !== 'string' || !/^[1-9][0-9]*$/.test(normalized)) {
+    errors.version = 'Передайте поточну додатну версію картки.';
+    return undefined;
+  }
+  return normalized;
+}
+
+export function validateReaderArchive(input) {
+  requireObject(input);
+  const errors = {};
+  const version = readVersion(input.version, errors);
+  const reason = readRequiredText(input.reason, 'reason', 500, errors);
+  if (Object.keys(errors).length) throwValidation(errors);
+  return { version, reason };
+}
+
+export function validateReaderRestore(input) {
+  requireObject(input);
+  const errors = {};
+  const version = readVersion(input.version, errors);
+  if (Object.keys(errors).length) throwValidation(errors);
+  return { version };
+}
+
+export function validateReaderIdempotencyKey(value) {
+  if (typeof value !== 'string' || !value.trim() || value.length > 128) {
+    throw new AppError(
+      400,
+      'INVALID_IDEMPOTENCY_KEY',
+      'Передайте заголовок Idempotency-Key довжиною від 1 до 128 символів.',
+    );
+  }
+  return value.trim();
+}

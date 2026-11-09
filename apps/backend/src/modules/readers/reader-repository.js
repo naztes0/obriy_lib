@@ -94,6 +94,31 @@ async function generateTicketNumber(client) {
   }
 }
 
+async function reserveRequest(client, { actorId, operation, requestKey }) {
+  const inserted = await client.query(
+    `INSERT INTO processed_requests (actor_id, operation, request_key)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (actor_id, operation, request_key) DO NOTHING
+     RETURNING id`,
+    [actorId, operation, requestKey],
+  );
+  if (inserted.rowCount) return { isNew: true };
+  const existing = await client.query(
+    `SELECT result_entity_id FROM processed_requests
+     WHERE actor_id = $1 AND operation = $2 AND request_key = $3`,
+    [actorId, operation, requestKey],
+  );
+  return { isNew: false, resultId: String(existing.rows[0].result_entity_id) };
+}
+
+async function completeRequest(client, { actorId, operation, requestKey, resultId }) {
+  await client.query(
+    `UPDATE processed_requests SET result_entity_id = $4
+     WHERE actor_id = $1 AND operation = $2 AND request_key = $3`,
+    [actorId, operation, requestKey, resultId],
+  );
+}
+
 export class ReaderRepository {
   constructor(pool) {
     this.pool = pool;
@@ -294,5 +319,123 @@ export class ReaderRepository {
     } finally {
       client.release();
     }
+  }
+
+  async archiveReader(readerId, { version, reason, actorId, requestKey }) {
+    const client = await this.pool.connect();
+    const operation = 'archive_reader';
+    try {
+      await client.query('BEGIN');
+      const reservation = await reserveRequest(client, { actorId, operation, requestKey });
+      if (!reservation.isNew) {
+        await client.query('COMMIT');
+        return { status: 'repeated', readerId: reservation.resultId };
+      }
+
+      const reader = await client.query(
+        `SELECT reader_id, archived_at, version
+         FROM reader_personal_data
+         WHERE reader_id = $1
+         FOR UPDATE`,
+        [readerId],
+      );
+      if (!reader.rowCount) return await this.rollbackStatus(client, 'not_found');
+      const row = reader.rows[0];
+      if (row.archived_at !== null) return await this.rollbackStatus(client, 'already_archived');
+      if (String(row.version) !== version) {
+        return await this.rollbackStatus(client, 'version_conflict');
+      }
+
+      const openLoans = await client.query(
+        `SELECT id FROM loans
+         WHERE reader_id = $1 AND status IN ('issued', 'lost')
+         LIMIT 1`,
+        [readerId],
+      );
+      if (openLoans.rowCount) return await this.rollbackStatus(client, 'open_loans');
+
+      await client.query(
+        `UPDATE reader_personal_data
+         SET archived_at = now(), archive_reason = $2, version = version + 1
+         WHERE reader_id = $1`,
+        [readerId, reason],
+      );
+      await client.query(
+        `INSERT INTO reader_record_events (reader_id, event_type, actor_id, reason)
+         VALUES ($1, 'archived', $2, $3)`,
+        [readerId, actorId, reason],
+      );
+      await completeRequest(client, { actorId, operation, requestKey, resultId: readerId });
+      await client.query('COMMIT');
+      return { status: 'archived', readerId };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async restoreReader(readerId, { version, today, actorId, requestKey }) {
+    const client = await this.pool.connect();
+    const operation = 'restore_reader';
+    try {
+      await client.query('BEGIN');
+      const reservation = await reserveRequest(client, { actorId, operation, requestKey });
+      if (!reservation.isNew) {
+        await client.query('COMMIT');
+        return { status: 'repeated', readerId: reservation.resultId };
+      }
+
+      const reader = await client.query(
+        `SELECT reader_id, category, ticket_expires_on, archived_at, version
+         FROM reader_personal_data
+         WHERE reader_id = $1
+         FOR UPDATE`,
+        [readerId],
+      );
+      if (!reader.rowCount) return await this.rollbackStatus(client, 'not_found');
+      const row = reader.rows[0];
+      if (row.archived_at === null) return await this.rollbackStatus(client, 'not_archived');
+      if (String(row.version) !== version) {
+        return await this.rollbackStatus(client, 'version_conflict');
+      }
+      if (row.category === 'student' && toDateOnly(row.ticket_expires_on) < today) {
+        return await this.rollbackStatus(client, 'ticket_expired');
+      }
+
+      const openLoans = await client.query(
+        `SELECT id FROM loans
+         WHERE reader_id = $1 AND status IN ('issued', 'lost')
+         LIMIT 1`,
+        [readerId],
+      );
+      if (openLoans.rowCount) return await this.rollbackStatus(client, 'open_loans');
+
+      await client.query(
+        `UPDATE reader_personal_data
+         SET archived_at = NULL, archive_reason = NULL, version = version + 1
+         WHERE reader_id = $1`,
+        [readerId],
+      );
+      await client.query(
+        `INSERT INTO reader_record_events (reader_id, event_type, actor_id)
+         VALUES ($1, 'restored', $2)`,
+        [readerId, actorId],
+      );
+      await completeRequest(client, { actorId, operation, requestKey, resultId: readerId });
+      await client.query('COMMIT');
+      return { status: 'restored', readerId };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async rollbackStatus(client, status) {
+    await client.query('ROLLBACK');
+    return { status };
   }
 }

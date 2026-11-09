@@ -192,3 +192,76 @@ test('ordinary reader fields can be updated by a librarian', async () => {
   assert.equal(updated.values.phone, '+380502222222');
   assert.equal(updated.context.actorId, '2');
 });
+
+test('student ticket expiration can be extended while the card is archived', async () => {
+  let updated;
+  const repository = {
+    findById: async () => reader({ isArchived: true }),
+    updateReader: async (readerId, values) => {
+      updated = { readerId, values };
+      return { status: 'updated' };
+    },
+  };
+  const service = new ReaderService(repository);
+
+  await service.updateReader('10', { ticketExpiresOn: '2028-06-30' }, librarian);
+
+  assert.equal(updated.values.ticketExpiresOn, '2028-06-30');
+});
+
+test('reader can be archived when the repository confirms there are no open loans', async () => {
+  let received;
+  const repository = {
+    archiveReader: async (readerId, context) => {
+      received = { readerId, context };
+      return { status: 'archived', readerId };
+    },
+    findById: async () => reader({ isArchived: true, archiveReason: 'За зверненням' }),
+  };
+  const service = new ReaderService(repository);
+
+  const result = await service.archiveReader(
+    '10',
+    { version: '1', reason: ' За зверненням ' },
+    librarian,
+    'archive-reader-10',
+  );
+
+  assert.deepEqual(received, {
+    readerId: '10',
+    context: {
+      version: '1',
+      reason: 'За зверненням',
+      actorId: '2',
+      requestKey: 'archive-reader-10',
+    },
+  });
+  assert.equal(result.isArchived, true);
+});
+
+test('reader with an open loan cannot be archived', async () => {
+  const service = new ReaderService({
+    archiveReader: async () => ({ status: 'open_loans' }),
+  });
+
+  await assert.rejects(
+    service.archiveReader(
+      '10',
+      { version: '1', reason: 'За зверненням' },
+      librarian,
+      'archive-reader-open-loan',
+    ),
+    (error) => error.code === 'READER_HAS_OPEN_LOANS' && error.status === 422,
+  );
+});
+
+test('expired student card cannot be restored', async () => {
+  const service = new ReaderService({
+    restoreReader: async () => ({ status: 'ticket_expired' }),
+  });
+
+  await assert.rejects(
+    service.restoreReader('10', { version: '2' }, manager, 'restore-expired-reader'),
+    (error) => error.code === 'READER_TICKET_EXPIRED' && error.status === 422,
+  );
+});
