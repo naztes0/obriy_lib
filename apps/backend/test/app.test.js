@@ -239,6 +239,44 @@ test('copy routes pass the actor and JSON to the copy service', async () => {
   });
 });
 
+test('fund loss route passes JSON, actor and idempotency key to the copy service', async () => {
+  const actor = { id: '3', role: 'librarian' };
+  const authService = {
+    authenticateToken: async () => actor,
+    login: async () => {},
+    logout: async () => {},
+  };
+  let received;
+  const copyService = {
+    markLostInFund: async (copyId, input, requestActor, key) => {
+      received = { copyId, input, actor: requestActor, key };
+      return { id: copyId, isLost: true };
+    },
+  };
+  const baseUrl = await startTestServer(
+    { query: async () => ({}) },
+    { services: { authService, catalogService: {}, copyService } },
+  );
+
+  const response = await fetch(`${baseUrl}/api/v1/copies/20/loss`, {
+    method: 'POST',
+    headers: {
+      Cookie: 'obriy_session=test-session',
+      'Content-Type': 'application/json',
+      'Idempotency-Key': 'fund-loss-http-1',
+    },
+    body: JSON.stringify({ version: '2', reason: 'Не знайдено у фонді' }),
+  });
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(received, {
+    copyId: '20',
+    input: { version: '2', reason: 'Не знайдено у фонді' },
+    actor,
+    key: 'fund-loss-http-1',
+  });
+});
+
 test('school class list is available to an authenticated librarian', async () => {
   const authService = {
     authenticateToken: async () => ({ id: '2', role: 'librarian' }),

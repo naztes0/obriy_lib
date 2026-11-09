@@ -3,6 +3,8 @@ import { readPagination } from '../../http/pagination.js';
 import {
   validateConditionChange,
   validateCopyCreate,
+  validateCopyIdempotencyKey,
+  validateCopyLoss,
   validateTemporaryUnavailability,
 } from './copy-input.js';
 
@@ -65,6 +67,38 @@ export class CopyService {
     });
     this.assertMutableResult(result);
     return await this.getCopy(copyId);
+  }
+
+  async markLostInFund(copyId, input, actor, idempotencyKey) {
+    validateId(copyId, 'copy');
+    const values = validateCopyLoss(input);
+    const requestKey = validateCopyIdempotencyKey(idempotencyKey);
+    const result = await this.repository.markLostInFund(copyId, {
+      ...values,
+      actorId: actor.id,
+      requestKey,
+    });
+    this.assertMutableResult(result);
+    const errors = {
+      already_lost: [422, 'COPY_ALREADY_LOST', 'Примірник уже позначений втраченим.'],
+      copy_on_loan: [
+        422,
+        'COPY_HAS_OPEN_LOAN',
+        'Втрату виданого примірника потрібно фіксувати в межах його видачі.',
+      ],
+    };
+    if (result.status === 'version_conflict') {
+      throw new AppError(
+        409,
+        'VERSION_CONFLICT',
+        'Примірник уже змінився. Оновіть дані та повторіть дію.',
+      );
+    }
+    if (errors[result.status]) {
+      const [status, code, message] = errors[result.status];
+      throw new AppError(status, code, message);
+    }
+    return await this.getCopy(result.copyId);
   }
 
   assertMutableResult(result) {

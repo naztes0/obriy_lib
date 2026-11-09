@@ -98,6 +98,49 @@ test('temporary unavailability only accepts a boolean and a reason', async () =>
   );
 });
 
+test('copy can be marked lost in the fund without a loan', async () => {
+  let received;
+  const service = new CopyService({
+    markLostInFund: async (copyId, input) => {
+      received = { copyId, ...input };
+      return { status: 'lost', copyId };
+    },
+    findCopyById: async () => ({ id: '3', isLost: true, isAvailable: false, version: '2' }),
+  });
+
+  const result = await service.markLostInFund(
+    '3',
+    { version: '1', reason: ' Не знайдено під час інвентаризації ' },
+    actor,
+    'fund-loss-3',
+  );
+
+  assert.deepEqual(received, {
+    copyId: '3',
+    version: '1',
+    reason: 'Не знайдено під час інвентаризації',
+    actorId: '7',
+    requestKey: 'fund-loss-3',
+  });
+  assert.equal(result.isLost, true);
+});
+
+test('copy on loan cannot be marked lost through the fund flow', async () => {
+  const service = new CopyService({
+    markLostInFund: async () => ({ status: 'copy_on_loan' }),
+  });
+
+  await assert.rejects(
+    service.markLostInFund(
+      '3',
+      { version: '1', reason: 'Не знайдено' },
+      actor,
+      'fund-loss-on-loan',
+    ),
+    (error) => error.code === 'COPY_HAS_OPEN_LOAN' && error.status === 422,
+  );
+});
+
 test('copy history is paginated after checking that the copy exists', async () => {
   let query;
   const service = new CopyService({

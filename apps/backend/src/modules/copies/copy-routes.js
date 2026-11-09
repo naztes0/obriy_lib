@@ -30,6 +30,19 @@ export function registerCopyRoutes(router, { authService, copyService }) {
     }),
   );
 
+  router.post(
+    '/api/v1/copies/:copyId/loss',
+    requireAuthentication(authService, async ({ request, response, requestId, params, actor }) => {
+      const copy = await copyService.markLostInFund(
+        params.copyId,
+        await readJsonBody(request),
+        actor,
+        request.headers['idempotency-key'],
+      );
+      sendData(response, 200, copy, requestId);
+    }),
+  );
+
   router.get(
     '/api/v1/copies/:copyId/history',
     requireAuthentication(authService, async ({ response, requestId, params, searchParams }) => {

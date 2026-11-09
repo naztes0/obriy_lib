@@ -56,6 +56,31 @@ async function insertEvent(client, { copyId, kind, oldValue, newValue, reason, a
   );
 }
 
+async function reserveRequest(client, { actorId, operation, requestKey }) {
+  const inserted = await client.query(
+    `INSERT INTO processed_requests (actor_id, operation, request_key)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (actor_id, operation, request_key) DO NOTHING
+     RETURNING id`,
+    [actorId, operation, requestKey],
+  );
+  if (inserted.rowCount) return { isNew: true };
+  const existing = await client.query(
+    `SELECT result_entity_id FROM processed_requests
+     WHERE actor_id = $1 AND operation = $2 AND request_key = $3`,
+    [actorId, operation, requestKey],
+  );
+  return { isNew: false, resultId: String(existing.rows[0].result_entity_id) };
+}
+
+async function completeRequest(client, { actorId, operation, requestKey, resultId }) {
+  await client.query(
+    `UPDATE processed_requests SET result_entity_id = $4
+     WHERE actor_id = $1 AND operation = $2 AND request_key = $3`,
+    [actorId, operation, requestKey, resultId],
+  );
+}
+
 export class CopyRepository {
   constructor(pool) {
     this.pool = pool;
@@ -199,6 +224,79 @@ export class CopyRepository {
     } finally {
       client.release();
     }
+  }
+
+  async markLostInFund(copyId, { version, reason, actorId, requestKey }) {
+    const client = await this.pool.connect();
+    const operation = `lose_copy_in_fund:${copyId}`;
+    try {
+      await client.query('BEGIN');
+      const reservation = await reserveRequest(client, { actorId, operation, requestKey });
+      if (!reservation.isNew) {
+        await client.query('COMMIT');
+        return { status: 'repeated', copyId: reservation.resultId };
+      }
+
+      const current = await client.query(
+        `SELECT bc.id, bc.is_lost, bc.archived_at, bc.version,
+                b.archived_at AS book_archived_at
+         FROM book_copies bc
+         JOIN books b ON b.id = bc.book_id
+         WHERE bc.id = $1
+         FOR UPDATE OF bc`,
+        [copyId],
+      );
+      if (!current.rowCount) return await this.rollbackStatus(client, 'not_found');
+      const row = current.rows[0];
+      if (row.archived_at !== null || row.book_archived_at !== null) {
+        return await this.rollbackStatus(client, 'archived');
+      }
+      if (row.is_lost) return await this.rollbackStatus(client, 'already_lost');
+      if (String(row.version) !== version) {
+        return await this.rollbackStatus(client, 'version_conflict');
+      }
+
+      const openLoan = await client.query(
+        `SELECT id FROM loans
+         WHERE copy_id = $1 AND status IN ('issued', 'lost')
+         LIMIT 1`,
+        [copyId],
+      );
+      if (openLoan.rowCount) return await this.rollbackStatus(client, 'copy_on_loan');
+
+      await client.query(
+        `UPDATE book_copies
+         SET is_lost = true, version = version + 1
+         WHERE id = $1`,
+        [copyId],
+      );
+      await client.query(
+        `INSERT INTO book_copy_events (
+           copy_id, kind, old_value, new_value, reason, actor_id, request_key, loan_id
+         ) VALUES ($1, 'lost_in_fund', $2, $3, $4, $5, $6, NULL)`,
+        [
+          copyId,
+          JSON.stringify({ isLost: false }),
+          JSON.stringify({ isLost: true }),
+          reason,
+          actorId,
+          requestKey,
+        ],
+      );
+      await completeRequest(client, { actorId, operation, requestKey, resultId: copyId });
+      await client.query('COMMIT');
+      return { status: 'lost', copyId };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async rollbackStatus(client, status) {
+    await client.query('ROLLBACK');
+    return { status };
   }
 
   async listHistory(copyId, { pageSize, offset }) {

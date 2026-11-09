@@ -43,11 +43,25 @@ function readDefectDescription(input, condition, errors) {
 }
 
 function readReason(value, errors) {
-  if (typeof value !== 'string' || cleanText(value) === '') {
+  if (typeof value !== 'string') {
     errors.reason = 'Вкажіть причину зміни.';
     return undefined;
   }
-  return cleanText(value);
+  const result = cleanText(value);
+  if (!result || result.length > 500) {
+    errors.reason = 'Вкажіть причину довжиною від 1 до 500 символів.';
+    return undefined;
+  }
+  return result;
+}
+
+function readVersion(value, errors) {
+  const normalized = Number.isSafeInteger(value) ? String(value) : value;
+  if (typeof normalized !== 'string' || !/^[1-9][0-9]*$/.test(normalized)) {
+    errors.version = 'Передайте поточну додатну версію примірника.';
+    return undefined;
+  }
+  return normalized;
 }
 
 export function validateCopyCreate(input) {
@@ -86,4 +100,24 @@ export function validateTemporaryUnavailability(input) {
   const reason = readReason(input.reason, errors);
   if (Object.keys(errors).length) throwValidation(errors);
   return { isTemporarilyUnavailable: input.isTemporarilyUnavailable, reason };
+}
+
+export function validateCopyLoss(input) {
+  requireObject(input);
+  const errors = {};
+  const version = readVersion(input.version, errors);
+  const reason = readReason(input.reason, errors);
+  if (Object.keys(errors).length) throwValidation(errors);
+  return { version, reason };
+}
+
+export function validateCopyIdempotencyKey(value) {
+  if (typeof value !== 'string' || !value.trim() || value.length > 128) {
+    throw new AppError(
+      400,
+      'INVALID_IDEMPOTENCY_KEY',
+      'Передайте заголовок Idempotency-Key довжиною від 1 до 128 символів.',
+    );
+  }
+  return value.trim();
 }
