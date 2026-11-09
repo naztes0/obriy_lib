@@ -38,7 +38,11 @@ export function createApp({ pool, config = {}, logger = console, services = {} }
   const schoolClassService =
     services.schoolClassService ?? new SchoolClassService(new SchoolClassRepository(pool));
   const readerService = services.readerService ?? new ReaderService(new ReaderRepository(pool));
-  const loanService = services.loanService ?? new LoanService(new LoanRepository(pool));
+  const loanService =
+    services.loanService ??
+    new LoanService(new LoanRepository(pool), {
+      afterObligationClosed: (readerId) => readerService.anonymizeReaderIfEligible(readerId),
+    });
 
   const router = new Router();
   registerHealthRoutes(router, { pool, logger });

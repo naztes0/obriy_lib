@@ -49,6 +49,11 @@ const ISSUE_ERRORS = {
   reader_not_found: [404, 'READER_NOT_FOUND', 'Читача не знайдено.'],
   reader_archived: [422, 'READER_ARCHIVED', 'Архівному читачеві не можна видати примірник.'],
   ticket_expired: [422, 'READER_TICKET_EXPIRED', 'Строк учнівського квитка завершився.'],
+  employment_ended: [
+    422,
+    'READER_EMPLOYMENT_ENDED',
+    'Працівник завершив роботу в ліцеї та не може отримувати нові примірники.',
+  ],
   copy_not_found: [404, 'COPY_NOT_FOUND', 'Примірник не знайдено.'],
   book_archived: [422, 'BOOK_ARCHIVED', 'Архівну книгу не можна видати.'],
   copy_archived: [422, 'COPY_ARCHIVED', 'Архівний примірник не можна видати.'],
@@ -73,9 +78,13 @@ const ISSUE_ERRORS = {
 };
 
 export class LoanService {
-  constructor(repository, { now = () => new Date() } = {}) {
+  constructor(
+    repository,
+    { now = () => new Date(), afterObligationClosed = async () => {} } = {},
+  ) {
     this.repository = repository;
     this.now = now;
+    this.afterObligationClosed = afterObligationClosed;
   }
 
   async getLoan(loanId) {
@@ -134,6 +143,8 @@ export class LoanService {
       );
     }
     if (result.status === 'version_conflict') throw versionConflict();
+    const loan = await this.getLoan(result.loanId);
+    if (loan.reader?.id) await this.afterObligationClosed(loan.reader.id);
     return await this.getLoan(result.loanId);
   }
 
@@ -165,6 +176,11 @@ export class LoanService {
       ],
       reader_overdue: [422, 'READER_HAS_OVERDUE_LOANS', 'Читач має прострочені видачі.'],
       reader_has_loss: [422, 'READER_HAS_UNRESOLVED_LOSS', 'Читач має неврегульовану втрату.'],
+      employment_ended: [
+        422,
+        'READER_EMPLOYMENT_ENDED',
+        'Працівник завершив роботу в ліцеї, тому продовження недоступне.',
+      ],
     };
     if (result.status === 'version_conflict') throw versionConflict();
     if (errors[result.status]) {
@@ -209,6 +225,8 @@ export class LoanService {
       throw new AppError(422, 'LOAN_STATUS_NOT_COMPENSATABLE', 'Відшкодувати можна лише втрату.');
     }
     if (result.status === 'version_conflict') throw versionConflict();
+    const loan = await this.getLoan(result.loanId);
+    if (loan.reader?.id) await this.afterObligationClosed(loan.reader.id);
     return await this.getLoan(result.loanId);
   }
 

@@ -56,6 +56,18 @@ test('loan issue maps an unavailable copy to a business error', async () => {
   );
 });
 
+test('loan issue rejects an employee whose employment has ended', async () => {
+  const service = new LoanService(
+    { issueLoan: async () => ({ status: 'employment_ended' }) },
+    { now: () => new Date('2026-11-10T10:00:00.000Z') },
+  );
+
+  await assert.rejects(
+    service.issueLoan({ readerId: '1', copyId: '2' }, actor, 'request-ended-employee'),
+    (error) => error.code === 'READER_EMPLOYMENT_ENDED' && error.status === 422,
+  );
+});
+
 test('loan issue maps a concurrent duplicate to a conflict', async () => {
   const service = new LoanService(
     {
@@ -77,14 +89,24 @@ test('loan issue maps a concurrent duplicate to a conflict', async () => {
 
 test('loan return validates and passes the physical condition', async () => {
   let received;
+  let checkedReaderId;
   const repository = {
     returnLoan: async (loanId, input) => {
       received = { loanId, ...input };
       return { status: 'returned', loanId };
     },
-    findById: async () => ({ id: '20', status: 'returned', returnCondition: 'worn' }),
+    findById: async () => ({
+      id: '20',
+      status: 'returned',
+      returnCondition: 'worn',
+      reader: { id: '4' },
+    }),
   };
-  const service = new LoanService(repository);
+  const service = new LoanService(repository, {
+    afterObligationClosed: async (readerId) => {
+      checkedReaderId = readerId;
+    },
+  });
 
   const result = await service.returnLoan(
     '20',
@@ -102,6 +124,7 @@ test('loan return validates and passes the physical condition', async () => {
     requestKey: 'return-request-1',
   });
   assert.equal(result.status, 'returned');
+  assert.equal(checkedReaderId, '4');
 });
 
 test('damaged return requires a defect description', async () => {
@@ -145,6 +168,23 @@ test('loan extension passes the date, reason, version and current Kyiv date', as
   });
 });
 
+test('loan extension rejects an employee whose employment has ended', async () => {
+  const service = new LoanService(
+    { extendLoan: async () => ({ status: 'employment_ended' }) },
+    { now: () => new Date('2026-11-10T10:00:00.000Z') },
+  );
+
+  await assert.rejects(
+    service.extendLoan(
+      '20',
+      { version: '1', newDueDate: '2026-11-20', reason: 'Потрібно для навчання' },
+      actor,
+      'extend-ended-employee',
+    ),
+    (error) => error.code === 'READER_EMPLOYMENT_ENDED' && error.status === 422,
+  );
+});
+
 test('loan loss passes the current version and comment', async () => {
   let received;
   const repository = {
@@ -182,6 +222,28 @@ test('compensation rejects a stale version', async () => {
     ),
     (error) => error.code === 'VERSION_CONFLICT' && error.status === 409,
   );
+});
+
+test('compensation checks whether the reader can be anonymized', async () => {
+  let checkedReaderId;
+  const repository = {
+    compensateLoan: async () => ({ status: 'compensated', loanId: '20' }),
+    findById: async () => ({ id: '20', status: 'compensated', reader: { id: '4' } }),
+  };
+  const service = new LoanService(repository, {
+    afterObligationClosed: async (readerId) => {
+      checkedReaderId = readerId;
+    },
+  });
+
+  await service.compensateLoan(
+    '20',
+    { version: '2', comment: 'Відшкодовано' },
+    actor,
+    'compensate-request-2',
+  );
+
+  assert.equal(checkedReaderId, '4');
 });
 
 test('found copy requires a reason and returns its new state', async () => {

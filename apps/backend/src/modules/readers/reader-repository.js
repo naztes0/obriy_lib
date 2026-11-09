@@ -22,6 +22,7 @@ function mapReader(row) {
     ticketType: row.ticket_type,
     ticketIssuedOn: toDateOnly(row.ticket_issued_on),
     ticketExpiresOn: toDateOnly(row.ticket_expires_on),
+    employmentEndedOn: toDateOnly(row.employment_ended_on),
     isArchived: row.archived_at !== null,
     archiveReason: row.archive_reason,
     version: String(row.version),
@@ -31,7 +32,8 @@ function mapReader(row) {
 const READER_SELECT = `SELECT rpd.reader_id, rpd.full_name, rpd.category, rpd.class_id,
                               sc.name AS class_name, rpd.phone, rpd.address,
                               rpd.ticket_number, rpd.ticket_type, rpd.ticket_issued_on,
-                              rpd.ticket_expires_on, rpd.archived_at, rpd.archive_reason,
+                              rpd.ticket_expires_on, rpd.employment_ended_on,
+                              rpd.archived_at, rpd.archive_reason,
                               rpd.version
                        FROM reader_personal_data rpd
                        LEFT JOIN school_classes sc ON sc.id = rpd.class_id`;
@@ -47,6 +49,7 @@ function snapshot(row) {
     ticketType: row.ticket_type,
     ticketIssuedOn: toDateOnly(row.ticket_issued_on),
     ticketExpiresOn: toDateOnly(row.ticket_expires_on),
+    employmentEndedOn: toDateOnly(row.employment_ended_on),
   };
 }
 
@@ -282,6 +285,10 @@ export class ReaderRepository {
         ticketType: current.rows[0].ticket_type,
         ticketIssuedOn: current.rows[0].ticket_issued_on,
         ticketExpiresOn: reader.ticketExpiresOn,
+        employmentEndedOn:
+          reader.category === 'employee'
+            ? toDateOnly(current.rows[0].employment_ended_on)
+            : null,
       };
       if (JSON.stringify(oldValue) === JSON.stringify(newValue)) {
         await client.query('COMMIT');
@@ -292,6 +299,10 @@ export class ReaderRepository {
         `UPDATE reader_personal_data
          SET full_name = $2, category = $3, class_id = $4, phone = $5,
              address = $6, ticket_number = $7, ticket_expires_on = $8,
+             employment_ended_on = CASE
+               WHEN $3 = 'employee' THEN employment_ended_on
+               ELSE NULL
+             END,
              version = version + 1
          WHERE reader_id = $1`,
         [
@@ -426,6 +437,146 @@ export class ReaderRepository {
       await completeRequest(client, { actorId, operation, requestKey, resultId: readerId });
       await client.query('COMMIT');
       return { status: 'restored', readerId };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async setEmploymentEnd(readerId, { version, employmentEndedOn, actorId }) {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const current = await client.query(
+        `SELECT reader_id, category, employment_ended_on, version
+         FROM reader_personal_data
+         WHERE reader_id = $1
+         FOR UPDATE`,
+        [readerId],
+      );
+      if (!current.rowCount) return await this.rollbackStatus(client, 'not_found');
+      const row = current.rows[0];
+      if (row.category !== 'employee') {
+        return await this.rollbackStatus(client, 'not_employee');
+      }
+      if (String(row.version) !== version) {
+        return await this.rollbackStatus(client, 'version_conflict');
+      }
+      const oldValue = toDateOnly(row.employment_ended_on);
+      if (oldValue === employmentEndedOn) {
+        await client.query('COMMIT');
+        return { status: 'unchanged', readerId };
+      }
+
+      await client.query(
+        `UPDATE reader_personal_data
+         SET employment_ended_on = $2, version = version + 1
+         WHERE reader_id = $1`,
+        [readerId, employmentEndedOn],
+      );
+      await client.query(
+        `INSERT INTO reader_personal_data_changes (
+           reader_id, event_type, old_value, new_value, actor_id
+         ) VALUES ($1, 'employment_end_changed', $2, $3, $4)`,
+        [
+          readerId,
+          JSON.stringify({ employmentEndedOn: oldValue }),
+          JSON.stringify({ employmentEndedOn }),
+          actorId,
+        ],
+      );
+      await client.query('COMMIT');
+      return { status: 'updated', readerId };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async anonymizeEligibleReaders({ today, readerId = null }) {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const candidates = await client.query(
+        `SELECT rpd.reader_id
+         FROM reader_personal_data rpd
+         WHERE ($1::bigint IS NULL OR rpd.reader_id = $1)
+           AND (
+             (rpd.category = 'student' AND rpd.ticket_expires_on < $2::date)
+             OR (
+               rpd.category = 'employee'
+               AND rpd.employment_ended_on IS NOT NULL
+               AND rpd.employment_ended_on <= $2::date
+             )
+           )
+           AND NOT EXISTS (
+             SELECT 1 FROM loans l
+             WHERE l.reader_id = rpd.reader_id AND l.status IN ('issued', 'lost')
+           )
+         ORDER BY rpd.reader_id
+         FOR UPDATE OF rpd`,
+        [readerId, today],
+      );
+
+      const anonymized = [];
+      for (const candidate of candidates.rows) {
+        const id = String(candidate.reader_id);
+        const openLoans = await client.query(
+          `SELECT 1 FROM loans
+           WHERE reader_id = $1 AND status IN ('issued', 'lost')
+           LIMIT 1`,
+          [id],
+        );
+        if (openLoans.rowCount) continue;
+
+        await client.query(
+          `UPDATE loan_status_events
+           SET comment = NULL
+           WHERE loan_id IN (SELECT id FROM loans WHERE reader_id = $1)`,
+          [id],
+        );
+        await client.query(
+          `UPDATE loan_extensions
+           SET reason = 'Видалено під час знеособлення'
+           WHERE loan_id IN (SELECT id FROM loans WHERE reader_id = $1)`,
+          [id],
+        );
+        await client.query(
+          `UPDATE book_copy_events
+           SET reason = NULL
+           WHERE loan_id IN (SELECT id FROM loans WHERE reader_id = $1)`,
+          [id],
+        );
+        await client.query(
+          'UPDATE reader_record_events SET reason = NULL WHERE reader_id = $1',
+          [id],
+        );
+        await client.query('DELETE FROM reader_personal_data_changes WHERE reader_id = $1', [id]);
+        await client.query('DELETE FROM reader_personal_data WHERE reader_id = $1', [id]);
+        const deleted = await client.query(
+          `UPDATE readers
+           SET personal_data_deleted_at = now()
+           WHERE id = $1 AND personal_data_deleted_at IS NULL
+           RETURNING personal_data_deleted_at`,
+          [id],
+        );
+        await client.query(
+          `INSERT INTO reader_record_events (reader_id, event_type, actor_id, reason)
+           VALUES ($1, 'anonymized', NULL, NULL)`,
+          [id],
+        );
+        anonymized.push({
+          readerId: id,
+          personalDataDeletedAt: deleted.rows[0].personal_data_deleted_at,
+        });
+      }
+
+      await client.query('COMMIT');
+      return anonymized;
     } catch (error) {
       await client.query('ROLLBACK');
       throw error;

@@ -119,7 +119,7 @@ export class LoanRepository {
       }
 
       const reader = await client.query(
-        `SELECT rpd.reader_id, rpd.category, rpd.ticket_expires_on,
+        `SELECT rpd.reader_id, rpd.category, rpd.ticket_expires_on, rpd.employment_ended_on,
                 rpd.archived_at, sc.name AS class_name
          FROM reader_personal_data rpd
          LEFT JOIN school_classes sc ON sc.id = rpd.class_id
@@ -133,6 +133,13 @@ export class LoanRepository {
       const ticketExpiresOn = toDateOnly(readerRow.ticket_expires_on);
       if (readerRow.category === 'student' && ticketExpiresOn < issueDate) {
         return await this.rollbackStatus(client, 'ticket_expired');
+      }
+      if (
+        readerRow.category === 'employee' &&
+        readerRow.employment_ended_on !== null &&
+        toDateOnly(readerRow.employment_ended_on) <= issueDate
+      ) {
+        return await this.rollbackStatus(client, 'employment_ended');
       }
 
       const copy = await client.query(
@@ -303,7 +310,8 @@ export class LoanRepository {
       }
       const current = await client.query(
         `SELECT l.status, l.version, l.reader_id, l.current_due_date,
-                rpd.category, rpd.ticket_expires_on, rpd.archived_at
+                rpd.category, rpd.ticket_expires_on, rpd.employment_ended_on,
+                rpd.archived_at
          FROM loans l
          LEFT JOIN reader_personal_data rpd ON rpd.reader_id = l.reader_id
          WHERE l.id = $1 FOR UPDATE OF l`,
@@ -315,6 +323,13 @@ export class LoanRepository {
       if (String(row.version) !== version) return await this.rollbackStatus(client, 'version_conflict');
       if (row.category === null || row.archived_at !== null) {
         return await this.rollbackStatus(client, 'reader_unavailable');
+      }
+      if (
+        row.category === 'employee' &&
+        row.employment_ended_on !== null &&
+        toDateOnly(row.employment_ended_on) <= today
+      ) {
+        return await this.rollbackStatus(client, 'employment_ended');
       }
       const oldDueDate = toDateOnly(row.current_due_date);
       if (today > oldDueDate) return await this.rollbackStatus(client, 'extension_period_ended');

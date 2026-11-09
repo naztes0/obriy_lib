@@ -68,4 +68,16 @@ export function registerReaderRoutes(router, { authService, readerService }) {
       },
     ),
   );
+
+  router.patch(
+    '/api/v1/readers/:readerId/employment-end',
+    requireAuthentication(authService, async ({ request, response, requestId, params, actor }) => {
+      const result = await readerService.setEmploymentEnd(
+        params.readerId,
+        await readJsonBody(request),
+        actor,
+      );
+      sendData(response, 200, result, requestId);
+    }),
+  );
 }

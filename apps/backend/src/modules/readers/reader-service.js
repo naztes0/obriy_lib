@@ -2,6 +2,7 @@ import { AppError } from '../../http/app-error.js';
 import { readPagination } from '../../http/pagination.js';
 import {
   normalizeComparableName,
+  validateEmploymentEnd,
   validateReaderArchive,
   validateReaderCreate,
   validateReaderIdempotencyKey,
@@ -262,5 +263,53 @@ export class ReaderService {
       throw new AppError(status, code, message);
     }
     return await this.getReader(result.readerId);
+  }
+
+  async setEmploymentEnd(readerId, input, actor) {
+    validateReaderId(readerId);
+    const values = validateEmploymentEnd(input);
+    const result = await this.repository.setEmploymentEnd(readerId, {
+      ...values,
+      actorId: actor.id,
+    });
+    const errors = {
+      not_found: [404, 'READER_NOT_FOUND', 'Читача не знайдено.'],
+      not_employee: [
+        422,
+        'READER_NOT_EMPLOYEE',
+        'Дату завершення роботи можна встановити лише працівнику ліцею.',
+      ],
+    };
+    if (result.status === 'version_conflict') throw versionConflict();
+    if (errors[result.status]) {
+      const [status, code, message] = errors[result.status];
+      throw new AppError(status, code, message);
+    }
+
+    const anonymized = await this.anonymizeReaderIfEligible(readerId);
+    if (anonymized) {
+      return {
+        id: readerId,
+        isAnonymized: true,
+        personalDataDeletedAt: anonymized.personalDataDeletedAt,
+      };
+    }
+    return await this.getReader(readerId);
+  }
+
+  async anonymizeReaderIfEligible(readerId) {
+    validateReaderId(readerId);
+    const results = await this.repository.anonymizeEligibleReaders({
+      today: todayInKyiv(this.now()),
+      readerId,
+    });
+    return results[0] ?? null;
+  }
+
+  async anonymizeEligibleReaders() {
+    const results = await this.repository.anonymizeEligibleReaders({
+      today: todayInKyiv(this.now()),
+    });
+    return { count: results.length, readers: results };
   }
 }

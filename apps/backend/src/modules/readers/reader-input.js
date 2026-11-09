@@ -64,6 +64,22 @@ function isValidDate(value) {
   return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
 }
 
+export function validateEmploymentEnd(input) {
+  requireObject(input);
+  const errors = {};
+  const version = readVersion(input.version, errors);
+  let employmentEndedOn = null;
+  if (input.employmentEndedOn !== null) {
+    if (!isValidDate(input.employmentEndedOn)) {
+      errors.employmentEndedOn = 'Вкажіть коректну дату у форматі YYYY-MM-DD або null.';
+    } else {
+      employmentEndedOn = input.employmentEndedOn;
+    }
+  }
+  if (Object.keys(errors).length) throwValidation(errors);
+  return { version, employmentEndedOn };
+}
+
 function validateValues(values, { creating }) {
   const errors = {};
   const result = {};

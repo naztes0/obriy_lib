@@ -493,6 +493,47 @@ test('reader restore route is forbidden for a librarian', async () => {
   assert.equal((await response.json()).error.code, 'ACCESS_DENIED');
 });
 
+test('reader employment end route passes JSON and actor to the reader service', async () => {
+  const actor = { id: '2', role: 'librarian' };
+  const authService = {
+    authenticateToken: async () => actor,
+    login: async () => {},
+    logout: async () => {},
+  };
+  let received;
+  const readerService = {
+    setEmploymentEnd: async (readerId, input, requestActor) => {
+      received = { readerId, input, actor: requestActor };
+      return { id: readerId, employmentEndedOn: input.employmentEndedOn };
+    },
+  };
+  const baseUrl = await startTestServer(
+    { query: async () => ({}) },
+    {
+      services: {
+        authService,
+        catalogService: {},
+        copyService: {},
+        schoolClassService: {},
+        readerService,
+      },
+    },
+  );
+
+  const input = { version: '3', employmentEndedOn: '2026-12-01' };
+  const response = await fetch(`${baseUrl}/api/v1/readers/12/employment-end`, {
+    method: 'PATCH',
+    headers: {
+      Cookie: 'obriy_session=test-session',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(input),
+  });
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(received, { readerId: '12', input, actor });
+});
+
 test('loan issue route passes JSON, actor and idempotency key', async () => {
   const actor = { id: '2', role: 'librarian' };
   const authService = {

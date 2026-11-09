@@ -17,6 +17,7 @@ function reader(overrides = {}) {
     ticketType: 'existing',
     ticketIssuedOn: null,
     ticketExpiresOn: '2027-06-30',
+    employmentEndedOn: null,
     isArchived: false,
     version: '1',
     currentLoans: [],
@@ -263,5 +264,75 @@ test('expired student card cannot be restored', async () => {
   await assert.rejects(
     service.restoreReader('10', { version: '2' }, manager, 'restore-expired-reader'),
     (error) => error.code === 'READER_TICKET_EXPIRED' && error.status === 422,
+  );
+});
+
+test('employment end date can be set for an employee', async () => {
+  let received;
+  const repository = {
+    setEmploymentEnd: async (readerId, context) => {
+      received = { readerId, context };
+      return { status: 'updated', readerId };
+    },
+    anonymizeEligibleReaders: async () => [],
+    findById: async () =>
+      reader({
+        category: 'employee',
+        schoolClass: null,
+        ticketExpiresOn: null,
+        employmentEndedOn: '2026-12-01',
+        version: '2',
+      }),
+  };
+  const service = new ReaderService(repository, {
+    now: () => new Date('2026-11-10T10:00:00.000Z'),
+  });
+
+  const result = await service.setEmploymentEnd(
+    '10',
+    { version: '1', employmentEndedOn: '2026-12-01' },
+    librarian,
+  );
+
+  assert.deepEqual(received, {
+    readerId: '10',
+    context: { version: '1', employmentEndedOn: '2026-12-01', actorId: '2' },
+  });
+  assert.equal(result.employmentEndedOn, '2026-12-01');
+});
+
+test('eligible employee is anonymized after employment end is set', async () => {
+  const repository = {
+    setEmploymentEnd: async () => ({ status: 'updated', readerId: '10' }),
+    anonymizeEligibleReaders: async () => [
+      { readerId: '10', personalDataDeletedAt: '2026-11-10T10:00:00.000Z' },
+    ],
+  };
+  const service = new ReaderService(repository, {
+    now: () => new Date('2026-11-10T10:00:00.000Z'),
+  });
+
+  const result = await service.setEmploymentEnd(
+    '10',
+    { version: '1', employmentEndedOn: '2026-11-10' },
+    librarian,
+  );
+
+  assert.equal(result.isAnonymized, true);
+  assert.equal(result.personalDataDeletedAt, '2026-11-10T10:00:00.000Z');
+});
+
+test('student cannot receive an employment end date', async () => {
+  const service = new ReaderService({
+    setEmploymentEnd: async () => ({ status: 'not_employee' }),
+  });
+
+  await assert.rejects(
+    service.setEmploymentEnd(
+      '10',
+      { version: '1', employmentEndedOn: '2026-11-10' },
+      librarian,
+    ),
+    (error) => error.code === 'READER_NOT_EMPLOYEE' && error.status === 422,
   );
 });
