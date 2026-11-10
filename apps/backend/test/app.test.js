@@ -576,3 +576,90 @@ test('loan issue route passes JSON, actor and idempotency key', async () => {
   assert.equal(response.status, 201);
   assert.deepEqual(received, { input, actor, key: 'issue-request-http-1' });
 });
+
+test('reader block route passes JSON, actor and idempotency key', async () => {
+  const actor = { id: '2', role: 'librarian' };
+  const authService = {
+    authenticateToken: async () => actor,
+    login: async () => {},
+    logout: async () => {},
+  };
+  let received;
+  const restrictionService = {
+    confirmBlock: async (readerId, input, requestActor, key) => {
+      received = { readerId, input, actor: requestActor, key };
+      return { id: '7', readerId, status: 'active' };
+    },
+  };
+  const baseUrl = await startTestServer(
+    { query: async () => ({}) },
+    {
+      services: {
+        authService,
+        catalogService: {},
+        copyService: {},
+        schoolClassService: {},
+        readerService: {},
+        restrictionService,
+        loanService: {},
+      },
+    },
+  );
+  const input = { sourceLoanId: '20', reasonCode: 'overdue' };
+
+  const response = await fetch(`${baseUrl}/api/v1/readers/4/blocks`, {
+    method: 'POST',
+    headers: {
+      Cookie: 'obriy_session=test-session',
+      'Content-Type': 'application/json',
+      'Idempotency-Key': 'block-reader-http-1',
+    },
+    body: JSON.stringify(input),
+  });
+
+  assert.equal(response.status, 201);
+  assert.deepEqual(received, {
+    readerId: '4',
+    input,
+    actor,
+    key: 'block-reader-http-1',
+  });
+});
+
+test('reader block annulment is forbidden for a librarian', async () => {
+  const authService = {
+    authenticateToken: async () => ({ id: '2', role: 'librarian' }),
+    login: async () => {},
+    logout: async () => {},
+  };
+  const restrictionService = {
+    annulBlock: async () => assert.fail('service must not be called'),
+  };
+  const baseUrl = await startTestServer(
+    { query: async () => ({}) },
+    {
+      services: {
+        authService,
+        catalogService: {},
+        copyService: {},
+        schoolClassService: {},
+        readerService: {},
+        restrictionService,
+        loanService: {},
+      },
+    },
+  );
+
+  const response = await fetch(`${baseUrl}/api/v1/reader-blocks/7/annul`, {
+    method: 'POST',
+    headers: {
+      Cookie: 'obriy_session=test-session',
+      'Content-Type': 'application/json',
+      'Idempotency-Key': 'annul-block-http-1',
+    },
+    body: JSON.stringify({ version: '1', reason: 'Помилка' }),
+  });
+
+  assert.equal(response.status, 403);
+  assert.equal((await response.json()).error.code, 'ACCESS_DENIED');
+});

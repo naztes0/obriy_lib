@@ -68,6 +68,18 @@ test('loan issue rejects an employee whose employment has ended', async () => {
   );
 });
 
+test('loan issue rejects a blocked reader', async () => {
+  const service = new LoanService(
+    { issueLoan: async () => ({ status: 'reader_blocked' }) },
+    { now: () => new Date('2026-11-10T10:00:00.000Z') },
+  );
+
+  await assert.rejects(
+    service.issueLoan({ readerId: '1', copyId: '2' }, actor, 'request-blocked-reader'),
+    (error) => error.code === 'READER_BLOCKED' && error.status === 422,
+  );
+});
+
 test('loan issue maps a concurrent duplicate to a conflict', async () => {
   const service = new LoanService(
     {
@@ -182,6 +194,23 @@ test('loan extension rejects an employee whose employment has ended', async () =
       'extend-ended-employee',
     ),
     (error) => error.code === 'READER_EMPLOYMENT_ENDED' && error.status === 422,
+  );
+});
+
+test('loan extension rejects a blocked reader', async () => {
+  const service = new LoanService(
+    { extendLoan: async () => ({ status: 'reader_blocked' }) },
+    { now: () => new Date('2026-11-10T10:00:00.000Z') },
+  );
+
+  await assert.rejects(
+    service.extendLoan(
+      '20',
+      { version: '1', newDueDate: '2026-11-20', reason: 'Потрібно для навчання' },
+      actor,
+      'extend-blocked-reader',
+    ),
+    (error) => error.code === 'READER_BLOCKED' && error.status === 422,
   );
 });
 

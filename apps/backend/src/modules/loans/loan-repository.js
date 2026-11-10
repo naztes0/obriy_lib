@@ -141,6 +141,13 @@ export class LoanRepository {
       ) {
         return await this.rollbackStatus(client, 'employment_ended');
       }
+      const activeBlock = await client.query(
+        `SELECT id FROM reader_blocks
+         WHERE reader_id = $1 AND resolved_at IS NULL AND annulled_at IS NULL
+         LIMIT 1`,
+        [readerId],
+      );
+      if (activeBlock.rowCount) return await this.rollbackStatus(client, 'reader_blocked');
 
       const copy = await client.query(
         `SELECT bc.id, bc.condition, bc.defect_description, bc.is_temporarily_unavailable,
@@ -308,29 +315,45 @@ export class LoanRepository {
         await client.query('COMMIT');
         return { status: 'repeated', loanId: reservation.resultId };
       }
+      const loanReader = await client.query(
+        'SELECT reader_id FROM loans WHERE id = $1',
+        [loanId],
+      );
+      if (!loanReader.rowCount) return await this.rollbackStatus(client, 'loan_not_found');
+      const reader = await client.query(
+        `SELECT category, ticket_expires_on, employment_ended_on, archived_at
+         FROM reader_personal_data
+         WHERE reader_id = $1
+         FOR UPDATE`,
+        [loanReader.rows[0].reader_id],
+      );
+      if (!reader.rowCount || reader.rows[0].archived_at !== null) {
+        return await this.rollbackStatus(client, 'reader_unavailable');
+      }
+      const readerRow = reader.rows[0];
       const current = await client.query(
-        `SELECT l.status, l.version, l.reader_id, l.current_due_date,
-                rpd.category, rpd.ticket_expires_on, rpd.employment_ended_on,
-                rpd.archived_at
-         FROM loans l
-         LEFT JOIN reader_personal_data rpd ON rpd.reader_id = l.reader_id
-         WHERE l.id = $1 FOR UPDATE OF l`,
+        `SELECT status, version, reader_id, current_due_date
+         FROM loans WHERE id = $1 FOR UPDATE`,
         [loanId],
       );
       if (!current.rowCount) return await this.rollbackStatus(client, 'loan_not_found');
       const row = current.rows[0];
       if (row.status !== 'issued') return await this.rollbackStatus(client, 'invalid_status');
       if (String(row.version) !== version) return await this.rollbackStatus(client, 'version_conflict');
-      if (row.category === null || row.archived_at !== null) {
-        return await this.rollbackStatus(client, 'reader_unavailable');
-      }
       if (
-        row.category === 'employee' &&
-        row.employment_ended_on !== null &&
-        toDateOnly(row.employment_ended_on) <= today
+        readerRow.category === 'employee' &&
+        readerRow.employment_ended_on !== null &&
+        toDateOnly(readerRow.employment_ended_on) <= today
       ) {
         return await this.rollbackStatus(client, 'employment_ended');
       }
+      const activeBlock = await client.query(
+        `SELECT id FROM reader_blocks
+         WHERE reader_id = $1 AND resolved_at IS NULL AND annulled_at IS NULL
+         LIMIT 1`,
+        [row.reader_id],
+      );
+      if (activeBlock.rowCount) return await this.rollbackStatus(client, 'reader_blocked');
       const oldDueDate = toDateOnly(row.current_due_date);
       if (today > oldDueDate) return await this.rollbackStatus(client, 'extension_period_ended');
       const existingExtension = await client.query(
@@ -345,8 +368,8 @@ export class LoanRepository {
       if (newDueDate <= oldDueDate || newDueDate > maximum) {
         return await this.rollbackStatus(client, 'invalid_extension_date');
       }
-      const ticketExpiresOn = toDateOnly(row.ticket_expires_on);
-      if (row.category === 'student' && newDueDate > ticketExpiresOn) {
+      const ticketExpiresOn = toDateOnly(readerRow.ticket_expires_on);
+      if (readerRow.category === 'student' && newDueDate > ticketExpiresOn) {
         return await this.rollbackStatus(client, 'ticket_limit_exceeded');
       }
       const obligations = await client.query(

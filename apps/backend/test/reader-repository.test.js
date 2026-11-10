@@ -20,6 +20,7 @@ test('reader repository returns PostgreSQL date values as YYYY-MM-DD', async () 
           ticket_issued_on: new Date(2026, 10, 3),
           ticket_expires_on: new Date(2027, 5, 30),
           employment_ended_on: null,
+          is_blocked: false,
           archived_at: null,
           archive_reason: null,
           version: '1',
@@ -39,4 +40,5 @@ test('reader repository returns PostgreSQL date values as YYYY-MM-DD', async () 
   assert.equal(result.ticketIssuedOn, '2026-11-03');
   assert.equal(result.ticketExpiresOn, '2027-06-30');
   assert.equal(result.employmentEndedOn, null);
+  assert.equal(result.isBlocked, false);
 });

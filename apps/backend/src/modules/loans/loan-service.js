@@ -54,6 +54,11 @@ const ISSUE_ERRORS = {
     'READER_EMPLOYMENT_ENDED',
     'Працівник завершив роботу в ліцеї та не може отримувати нові примірники.',
   ],
+  reader_blocked: [
+    422,
+    'READER_BLOCKED',
+    'Заблокованому читачеві не можна видавати нові примірники.',
+  ],
   copy_not_found: [404, 'COPY_NOT_FOUND', 'Примірник не знайдено.'],
   book_archived: [422, 'BOOK_ARCHIVED', 'Архівну книгу не можна видати.'],
   copy_archived: [422, 'COPY_ARCHIVED', 'Архівний примірник не можна видати.'],
@@ -180,6 +185,11 @@ export class LoanService {
         422,
         'READER_EMPLOYMENT_ENDED',
         'Працівник завершив роботу в ліцеї, тому продовження недоступне.',
+      ],
+      reader_blocked: [
+        422,
+        'READER_BLOCKED',
+        'Заблокованому читачеві не можна продовжувати строк видачі.',
       ],
     };
     if (result.status === 'version_conflict') throw versionConflict();

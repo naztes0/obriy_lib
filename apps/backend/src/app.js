@@ -18,6 +18,9 @@ import { LoanService } from './modules/loans/loan-service.js';
 import { ReaderRepository } from './modules/readers/reader-repository.js';
 import { registerReaderRoutes } from './modules/readers/reader-routes.js';
 import { ReaderService } from './modules/readers/reader-service.js';
+import { RestrictionRepository } from './modules/restrictions/restriction-repository.js';
+import { registerRestrictionRoutes } from './modules/restrictions/restriction-routes.js';
+import { RestrictionService } from './modules/restrictions/restriction-service.js';
 import { SchoolClassRepository } from './modules/school-classes/school-class-repository.js';
 import { registerSchoolClassRoutes } from './modules/school-classes/school-class-routes.js';
 import { SchoolClassService } from './modules/school-classes/school-class-service.js';
@@ -38,6 +41,8 @@ export function createApp({ pool, config = {}, logger = console, services = {} }
   const schoolClassService =
     services.schoolClassService ?? new SchoolClassService(new SchoolClassRepository(pool));
   const readerService = services.readerService ?? new ReaderService(new ReaderRepository(pool));
+  const restrictionService =
+    services.restrictionService ?? new RestrictionService(new RestrictionRepository(pool));
   const loanService =
     services.loanService ??
     new LoanService(new LoanRepository(pool), {
@@ -55,6 +60,7 @@ export function createApp({ pool, config = {}, logger = console, services = {} }
   registerCopyRoutes(router, { authService, copyService });
   registerSchoolClassRoutes(router, { authService, schoolClassService });
   registerReaderRoutes(router, { authService, readerService });
+  registerRestrictionRoutes(router, { authService, restrictionService });
   registerLoanRoutes(router, { authService, loanService });
 
   return async function handleRequest(request, response) {

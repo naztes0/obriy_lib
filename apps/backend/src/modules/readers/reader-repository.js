@@ -24,6 +24,7 @@ function mapReader(row) {
     ticketExpiresOn: toDateOnly(row.ticket_expires_on),
     employmentEndedOn: toDateOnly(row.employment_ended_on),
     isArchived: row.archived_at !== null,
+    isBlocked: row.is_blocked,
     archiveReason: row.archive_reason,
     version: String(row.version),
   };
@@ -34,7 +35,13 @@ const READER_SELECT = `SELECT rpd.reader_id, rpd.full_name, rpd.category, rpd.cl
                               rpd.ticket_number, rpd.ticket_type, rpd.ticket_issued_on,
                               rpd.ticket_expires_on, rpd.employment_ended_on,
                               rpd.archived_at, rpd.archive_reason,
-                              rpd.version
+                              rpd.version,
+                              EXISTS (
+                                SELECT 1 FROM reader_blocks rb
+                                WHERE rb.reader_id = rpd.reader_id
+                                  AND rb.resolved_at IS NULL
+                                  AND rb.annulled_at IS NULL
+                              ) AS is_blocked
                        FROM reader_personal_data rpd
                        LEFT JOIN school_classes sc ON sc.id = rpd.class_id`;
 
@@ -553,6 +560,22 @@ export class ReaderRepository {
         );
         await client.query(
           'UPDATE reader_record_events SET reason = NULL WHERE reader_id = $1',
+          [id],
+        );
+        await client.query(
+          `UPDATE reader_unblock_requests
+           SET request_comment = NULL, decision_comment = NULL
+           WHERE block_id IN (SELECT id FROM reader_blocks WHERE reader_id = $1)`,
+          [id],
+        );
+        await client.query(
+          `UPDATE reader_blocks
+           SET resolution_comment = NULL,
+               annul_reason = CASE
+                 WHEN annulled_at IS NULL THEN NULL
+                 ELSE 'Видалено під час знеособлення'
+               END
+           WHERE reader_id = $1`,
           [id],
         );
         await client.query('DELETE FROM reader_personal_data_changes WHERE reader_id = $1', [id]);

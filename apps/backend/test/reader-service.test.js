@@ -19,6 +19,7 @@ function reader(overrides = {}) {
     ticketExpiresOn: '2027-06-30',
     employmentEndedOn: null,
     isArchived: false,
+    isBlocked: false,
     version: '1',
     currentLoans: [],
     loanHistory: [],
