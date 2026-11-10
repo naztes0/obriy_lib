@@ -27,6 +27,9 @@ import { RestrictionService } from './modules/restrictions/restriction-service.j
 import { SchoolClassRepository } from './modules/school-classes/school-class-repository.js';
 import { registerSchoolClassRoutes } from './modules/school-classes/school-class-routes.js';
 import { SchoolClassService } from './modules/school-classes/school-class-service.js';
+import { StaffRepository } from './modules/staff/staff-repository.js';
+import { registerStaffRoutes } from './modules/staff/staff-routes.js';
+import { StaffService } from './modules/staff/staff-service.js';
 import { TextbookBatchRepository } from './modules/textbook-batches/textbook-batch-repository.js';
 import { registerTextbookBatchRoutes } from './modules/textbook-batches/textbook-batch-routes.js';
 import { TextbookBatchService } from './modules/textbook-batches/textbook-batch-service.js';
@@ -58,6 +61,7 @@ export function createApp({ pool, config = {}, logger = console, services = {} }
     services.textbookBatchService ??
     new TextbookBatchService(new TextbookBatchRepository(pool));
   const reportService = services.reportService ?? new ReportService(new ReportRepository(pool));
+  const staffService = services.staffService ?? new StaffService(new StaffRepository(pool));
 
   const router = new Router();
   registerHealthRoutes(router, { pool, logger });
@@ -74,6 +78,7 @@ export function createApp({ pool, config = {}, logger = console, services = {} }
   registerLoanRoutes(router, { authService, loanService });
   registerTextbookBatchRoutes(router, { authService, textbookBatchService });
   registerReportRoutes(router, { authService, reportService });
+  registerStaffRoutes(router, { authService, staffService });
 
   return async function handleRequest(request, response) {
     const requestId = randomUUID();

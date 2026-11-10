@@ -1,30 +1,11 @@
-import { createHash, randomBytes, randomUUID, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
-import { promisify } from 'node:util';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { AppError } from '../../http/app-error.js';
+import { verifyPassword } from './password.js';
 
-const scrypt = promisify(scryptCallback);
 const INVALID_CREDENTIALS = new AppError(401, 'INVALID_CREDENTIALS', 'Неправильний логін або пароль.');
-const DUMMY_SALT = 'obriy-invalid-login-placeholder';
 
 function hashToken(token) {
   return createHash('sha256').update(token).digest('hex');
-}
-
-async function verifyPassword(password, storedHash) {
-  if (!storedHash) {
-    await scrypt(password, DUMMY_SALT, 64);
-    return false;
-  }
-
-  const [algorithm, salt, expectedHex] = storedHash.split(':');
-  if (algorithm !== 'scrypt' || !salt || !/^[0-9a-f]{128}$/i.test(expectedHex ?? '')) {
-    await scrypt(password, DUMMY_SALT, 64);
-    return false;
-  }
-
-  const actual = await scrypt(password, salt, 64);
-  const expected = Buffer.from(expectedHex, 'hex');
-  return timingSafeEqual(actual, expected);
 }
 
 function publicStaff(account) {

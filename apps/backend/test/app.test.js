@@ -761,3 +761,85 @@ test('report route passes its type and query parameters', async () => {
   assert.deepEqual(received, { type: 'overdue-loans', className: '11-А' });
   assert.equal((await response.json()).meta.summary.loans, 1);
 });
+
+test('manager can create a librarian through the staff route', async () => {
+  const authService = {
+    authenticateToken: async () => ({ id: '1', role: 'manager' }),
+    login: async () => {},
+    logout: async () => {},
+  };
+  let received;
+  const staffService = {
+    createLibrarian: async (input) => {
+      received = input;
+      return { id: '2', login: input.login, role: 'librarian', isActive: true };
+    },
+  };
+  const baseUrl = await startTestServer(
+    { query: async () => ({}) },
+    {
+      services: {
+        authService,
+        catalogService: {},
+        copyService: {},
+        schoolClassService: {},
+        readerService: {},
+        restrictionService: {},
+        loanService: {},
+        textbookBatchService: {},
+        reportService: {},
+        staffService,
+      },
+    },
+  );
+  const input = {
+    login: 'lib.one',
+    displayName: 'Перший Бібліотекар',
+    password: 'safe-password',
+  };
+
+  const response = await fetch(`${baseUrl}/api/v1/staff`, {
+    method: 'POST',
+    headers: {
+      Cookie: 'obriy_session=test-session',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(input),
+  });
+
+  assert.equal(response.status, 201);
+  assert.deepEqual(received, input);
+  assert.equal((await response.json()).data.role, 'librarian');
+});
+
+test('librarian cannot access staff management routes', async () => {
+  const authService = {
+    authenticateToken: async () => ({ id: '2', role: 'librarian' }),
+    login: async () => {},
+    logout: async () => {},
+  };
+  const baseUrl = await startTestServer(
+    { query: async () => ({}) },
+    {
+      services: {
+        authService,
+        catalogService: {},
+        copyService: {},
+        schoolClassService: {},
+        readerService: {},
+        restrictionService: {},
+        loanService: {},
+        textbookBatchService: {},
+        reportService: {},
+        staffService: {},
+      },
+    },
+  );
+
+  const response = await fetch(`${baseUrl}/api/v1/staff`, {
+    headers: { Cookie: 'obriy_session=test-session' },
+  });
+
+  assert.equal(response.status, 403);
+  assert.equal((await response.json()).error.code, 'ACCESS_DENIED');
+});

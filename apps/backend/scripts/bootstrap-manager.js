@@ -1,5 +1,5 @@
-import { randomBytes, scryptSync } from 'node:crypto';
 import { createPool } from '../src/database.js';
+import { hashPassword } from '../src/modules/auth/password.js';
 
 const login = process.env.BOOTSTRAP_LOGIN?.trim();
 const displayName = process.env.BOOTSTRAP_DISPLAY_NAME?.trim();
@@ -20,12 +20,11 @@ try {
     await client.query('COMMIT');
     console.log('A manager account already exists; no account was created.');
   } else {
-    const salt = randomBytes(16).toString('hex');
-    const hash = scryptSync(password, salt, 64).toString('hex');
+    const passwordHash = await hashPassword(password);
     await client.query(
       `INSERT INTO staff_accounts (login, display_name, password_hash, role)
        VALUES ($1, $2, $3, 'manager')`,
-      [login, displayName, `scrypt:${salt}:${hash}`],
+      [login, displayName, passwordHash],
     );
     await client.query('COMMIT');
     console.log('Initial manager account created.');
