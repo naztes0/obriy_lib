@@ -663,3 +663,52 @@ test('reader block annulment is forbidden for a librarian', async () => {
   assert.equal(response.status, 403);
   assert.equal((await response.json()).error.code, 'ACCESS_DENIED');
 });
+
+test('textbook batch confirmation route passes JSON, actor and idempotency key', async () => {
+  const actor = { id: '2', role: 'librarian' };
+  const authService = {
+    authenticateToken: async () => actor,
+    login: async () => {},
+    logout: async () => {},
+  };
+  let received;
+  const textbookBatchService = {
+    createBatch: async (input, requestActor, key) => {
+      received = { input, actor: requestActor, key };
+      return { id: '5', issueCount: input.items.length, wasRepeated: false };
+    },
+  };
+  const baseUrl = await startTestServer(
+    { query: async () => ({}) },
+    {
+      services: {
+        authService,
+        catalogService: {},
+        copyService: {},
+        schoolClassService: {},
+        readerService: {},
+        restrictionService: {},
+        loanService: {},
+        textbookBatchService,
+      },
+    },
+  );
+  const input = {
+    classId: '3',
+    dueDate: '2027-05-31',
+    items: [{ readerId: '10', copyId: '20' }],
+  };
+
+  const response = await fetch(`${baseUrl}/api/v1/textbook-issue-batches`, {
+    method: 'POST',
+    headers: {
+      Cookie: 'obriy_session=test-session',
+      'Content-Type': 'application/json',
+      'Idempotency-Key': 'batch-http-1',
+    },
+    body: JSON.stringify(input),
+  });
+
+  assert.equal(response.status, 201);
+  assert.deepEqual(received, { input, actor, key: 'batch-http-1' });
+});

@@ -24,6 +24,9 @@ import { RestrictionService } from './modules/restrictions/restriction-service.j
 import { SchoolClassRepository } from './modules/school-classes/school-class-repository.js';
 import { registerSchoolClassRoutes } from './modules/school-classes/school-class-routes.js';
 import { SchoolClassService } from './modules/school-classes/school-class-service.js';
+import { TextbookBatchRepository } from './modules/textbook-batches/textbook-batch-repository.js';
+import { registerTextbookBatchRoutes } from './modules/textbook-batches/textbook-batch-routes.js';
+import { TextbookBatchService } from './modules/textbook-batches/textbook-batch-service.js';
 
 export function createApp({ pool, config = {}, logger = console, services = {} }) {
   const effectiveConfig = {
@@ -48,6 +51,9 @@ export function createApp({ pool, config = {}, logger = console, services = {} }
     new LoanService(new LoanRepository(pool), {
       afterObligationClosed: (readerId) => readerService.anonymizeReaderIfEligible(readerId),
     });
+  const textbookBatchService =
+    services.textbookBatchService ??
+    new TextbookBatchService(new TextbookBatchRepository(pool));
 
   const router = new Router();
   registerHealthRoutes(router, { pool, logger });
@@ -62,6 +68,7 @@ export function createApp({ pool, config = {}, logger = console, services = {} }
   registerReaderRoutes(router, { authService, readerService });
   registerRestrictionRoutes(router, { authService, restrictionService });
   registerLoanRoutes(router, { authService, loanService });
+  registerTextbookBatchRoutes(router, { authService, textbookBatchService });
 
   return async function handleRequest(request, response) {
     const requestId = randomUUID();
