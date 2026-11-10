@@ -306,7 +306,8 @@ export class CopyRepository {
     );
     const result = await this.pool.query(
       `SELECT e.id, e.kind, e.old_value, e.new_value, e.reason, e.occurred_at,
-              e.actor_id, s.display_name AS actor_display_name, e.loan_id
+              e.actor_id, COALESCE(s.display_name, e.performed_by_snapshot) AS actor_display_name,
+              e.loan_id
        FROM book_copy_events e
        LEFT JOIN staff_accounts s ON s.id = e.actor_id
        WHERE e.copy_id = $1
@@ -322,8 +323,11 @@ export class CopyRepository {
         newValue: parseEventValue(row.new_value),
         reason: row.reason,
         occurredAt: row.occurred_at,
-        actor: row.actor_id
-          ? { id: String(row.actor_id), displayName: row.actor_display_name }
+        actor: row.actor_display_name
+          ? {
+              id: row.actor_id === null ? null : String(row.actor_id),
+              displayName: row.actor_display_name,
+            }
           : null,
         loanId: row.loan_id === null ? null : String(row.loan_id),
       })),

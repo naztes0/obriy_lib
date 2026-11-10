@@ -8,10 +8,13 @@
     "start": "node --env-file=../../.env src/main.js",
     "db:migrate": "node --env-file=../../.env scripts/migrate.js",
     "db:bootstrap": "node --env-file=../../.env scripts/bootstrap-manager.js",
+    "db:import:validate": "node --env-file=../../.env scripts/import-data.js --validate-only",
+    "db:import": "node --env-file=../../.env scripts/import-data.js",
     "test": "node --test"
   },
   "dependencies": {
     "@fontsource/noto-sans": "^5.3.0",
+    "csv-parse": "^7.0.3",
     "pdfkit": "^0.20.2",
     "pg": "^8.16.3"
   }

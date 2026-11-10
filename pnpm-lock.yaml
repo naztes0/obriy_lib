@@ -13,6 +13,9 @@ importers:
       '@fontsource/noto-sans':
         specifier: ^5.3.0
         version: 5.3.0
+      csv-parse:
+        specifier: ^7.0.3
+        version: 7.0.3
       pdfkit:
         specifier: ^0.20.2
         version: 0.20.2
@@ -49,6 +52,9 @@ packages:
   clone@2.1.2:
     resolution: {integrity: sha512-3Pe/CF1Nn94hyhIYpjtiLhdCoEoz0DqQ+988E9gmeEdQZlojxnOb74wctFyuwWQHzqyf9X7C7MG8juUpqBJT8w==}
     engines: {node: '>=0.8'}
+
+  csv-parse@7.0.3:
+    resolution: {integrity: sha512-YFd3QM/yo17vH91L1IOZuvl09zM0zEEtdfTcOCKWcMdM++MNaQSyp09slXyFCLaPXvHstQFx/xC8myiFHSMUvw==}
 
   dfa@1.2.0:
     resolution: {integrity: sha512-ED3jP8saaweFTjeGX8HQPjeC1YYyZs98jGNZx6IiBvxW7JG5v492kamAQB3m2wop07CvU/RQmzcKr6bgcC5D/Q==}
@@ -163,6 +169,8 @@ snapshots:
       base64-js: 1.5.1
 
   clone@2.1.2: {}
+
+  csv-parse@7.0.3: {}
 
   dfa@1.2.0: {}
 

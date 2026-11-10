@@ -10,21 +10,19 @@ function addDays(date, days) {
   return result.toISOString().slice(0, 10);
 }
 
+function mapActor(id, displayName) {
+  return displayName ? { id: id === null ? null : String(id), displayName } : null;
+}
+
 function mapRequest(row) {
   return {
     id: String(row.id),
     blockId: String(row.block_id),
-    requestedBy: {
-      id: String(row.requested_by),
-      displayName: row.requested_by_name,
-    },
+    requestedBy: mapActor(row.requested_by, row.requested_by_name),
     requestedAt: row.requested_at,
     requestComment: row.request_comment,
     decision: row.decision,
-    decidedBy:
-      row.decided_by === null
-        ? null
-        : { id: String(row.decided_by), displayName: row.decided_by_name },
+    decidedBy: mapActor(row.decided_by, row.decided_by_name),
     decidedAt: row.decided_at,
     decisionComment: row.decision_comment,
     version: String(row.version),
@@ -50,23 +48,14 @@ function mapBlock(row, requests = []) {
     },
     reasonCode: row.reason_code,
     confirmedAt: row.confirmed_at,
-    confirmedBy: {
-      id: String(row.confirmed_by),
-      displayName: row.confirmed_by_name,
-    },
+    confirmedBy: mapActor(row.confirmed_by, row.confirmed_by_name),
     minimumUntil: toDateOnly(row.minimum_until),
     isIndefinite: row.is_indefinite,
     resolvedAt: row.resolved_at,
-    resolvedBy:
-      row.resolved_by === null
-        ? null
-        : { id: String(row.resolved_by), displayName: row.resolved_by_name },
+    resolvedBy: mapActor(row.resolved_by, row.resolved_by_name),
     resolutionComment: row.resolution_comment,
     annulledAt: row.annulled_at,
-    annulledBy:
-      row.annulled_by === null
-        ? null
-        : { id: String(row.annulled_by), displayName: row.annulled_by_name },
+    annulledBy: mapActor(row.annulled_by, row.annulled_by_name),
     annulReason: row.annul_reason,
     version: String(row.version),
     unblockRequests: requests,
@@ -74,15 +63,15 @@ function mapBlock(row, requests = []) {
 }
 
 const BLOCK_SELECT = `SELECT rb.*,
-                             confirmer.display_name AS confirmed_by_name,
-                             resolver.display_name AS resolved_by_name,
-                             annuller.display_name AS annulled_by_name,
+                             COALESCE(confirmer.display_name, rb.confirmed_by_snapshot) AS confirmed_by_name,
+                             COALESCE(resolver.display_name, rb.resolved_by_snapshot) AS resolved_by_name,
+                             COALESCE(annuller.display_name, rb.annulled_by_snapshot) AS annulled_by_name,
                              l.id AS source_loan_id,
                              l.status AS source_loan_status,
                              l.current_due_date AS source_loan_due_date,
                              lost_event.lost_at AS source_loan_lost_at
                       FROM reader_blocks rb
-                      JOIN staff_accounts confirmer ON confirmer.id = rb.confirmed_by
+                      LEFT JOIN staff_accounts confirmer ON confirmer.id = rb.confirmed_by
                       LEFT JOIN staff_accounts resolver ON resolver.id = rb.resolved_by
                       LEFT JOIN staff_accounts annuller ON annuller.id = rb.annulled_by
                       LEFT JOIN loans l ON l.id = rb.source_loan_id
@@ -93,10 +82,10 @@ const BLOCK_SELECT = `SELECT rb.*,
                       ) lost_event ON true`;
 
 const REQUEST_SELECT = `SELECT rur.*,
-                               requester.display_name AS requested_by_name,
-                               decider.display_name AS decided_by_name
+                               COALESCE(requester.display_name, rur.requested_by_snapshot) AS requested_by_name,
+                               COALESCE(decider.display_name, rur.decided_by_snapshot) AS decided_by_name
                         FROM reader_unblock_requests rur
-                        JOIN staff_accounts requester ON requester.id = rur.requested_by
+                        LEFT JOIN staff_accounts requester ON requester.id = rur.requested_by
                         LEFT JOIN staff_accounts decider ON decider.id = rur.decided_by`;
 
 async function reserveRequest(client, { actorId, operation, requestKey }) {

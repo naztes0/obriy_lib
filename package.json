@@ -7,6 +7,8 @@
     "dev:backend": "pnpm --filter @obriy/backend dev",
     "db:migrate": "pnpm --filter @obriy/backend db:migrate",
     "db:bootstrap": "pnpm --filter @obriy/backend db:bootstrap",
+    "db:import:validate": "pnpm --filter @obriy/backend db:import:validate",
+    "db:import": "pnpm --filter @obriy/backend db:import",
     "test": "pnpm --filter @obriy/backend test"
   }
 }
