@@ -549,6 +549,72 @@ export class CopyRepository {
     }
   }
 
+  async changeBook(copyId, { version, bookId, reason, actorId, requestKey }) {
+    const client = await this.pool.connect();
+    const operation = `change_copy_book:${copyId}`;
+    try {
+      await client.query('BEGIN');
+      const reservation = await reserveRequest(client, { actorId, operation, requestKey });
+      if (!reservation.isNew) {
+        await client.query('COMMIT');
+        return { status: 'repeated', copyId: reservation.resultId };
+      }
+      const current = await client.query(
+        `SELECT bc.book_id, bc.archived_at, bc.version,
+                b.title AS book_title, b.archived_at AS book_archived_at
+         FROM book_copies bc
+         JOIN books b ON b.id = bc.book_id
+         WHERE bc.id = $1
+         FOR UPDATE OF bc`,
+        [copyId],
+      );
+      if (!current.rowCount) return await this.rollbackStatus(client, 'not_found');
+      const row = current.rows[0];
+      if (row.archived_at !== null || row.book_archived_at !== null) {
+        return await this.rollbackStatus(client, 'archived');
+      }
+      if (String(row.version) !== version) return await this.rollbackStatus(client, 'version_conflict');
+      if (String(row.book_id) === bookId) return await this.rollbackStatus(client, 'same_book');
+      const history = await client.query('SELECT 1 FROM loans WHERE copy_id = $1 LIMIT 1', [copyId]);
+      if (history.rowCount) return await this.rollbackStatus(client, 'has_loans');
+
+      const target = await client.query(
+        'SELECT title, archived_at FROM books WHERE id = $1 FOR UPDATE',
+        [bookId],
+      );
+      if (!target.rowCount) return await this.rollbackStatus(client, 'book_not_found');
+      if (target.rows[0].archived_at !== null) {
+        return await this.rollbackStatus(client, 'book_archived');
+      }
+
+      await client.query(
+        `UPDATE book_copies SET book_id = $2, version = version + 1 WHERE id = $1`,
+        [copyId, bookId],
+      );
+      await client.query(
+        `INSERT INTO book_copy_events (
+           copy_id, kind, old_value, new_value, reason, actor_id, request_key
+         ) VALUES ($1, 'book_changed', $2, $3, $4, $5, $6)`,
+        [
+          copyId,
+          JSON.stringify({ bookId: String(row.book_id), title: row.book_title }),
+          JSON.stringify({ bookId, title: target.rows[0].title }),
+          reason,
+          actorId,
+          requestKey,
+        ],
+      );
+      await completeRequest(client, { actorId, operation, requestKey, resultId: copyId });
+      await client.query('COMMIT');
+      return { status: 'changed', copyId };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   async rollbackStatus(client, status) {
     await client.query('ROLLBACK');
     return { status };

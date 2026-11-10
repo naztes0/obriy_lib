@@ -998,3 +998,71 @@ test('librarian can archive a book but cannot restore or delete it', async () =>
     assert.equal((await response.json()).error.code, 'ACCESS_DENIED', path);
   }
 });
+
+test('librarian cannot correct loan statuses or record an erroneous return', async () => {
+  const authService = {
+    authenticateToken: async () => ({ id: '2', role: 'librarian' }),
+    login: async () => {},
+    logout: async () => {},
+  };
+  const loanService = {
+    correctLoanStatus: async () => assert.fail('service must not be called'),
+    recordErroneousReturn: async () => assert.fail('service must not be called'),
+  };
+  const baseUrl = await startTestServer(
+    { query: async () => ({}) },
+    { services: { authService, catalogService: {}, copyService: {}, loanService } },
+  );
+
+  for (const path of [
+    '/api/v1/loans/20/correct-status',
+    '/api/v1/loans/20/erroneous-return',
+  ]) {
+    const response = await fetch(`${baseUrl}${path}`, {
+      method: 'POST',
+      headers: {
+        Cookie: 'obriy_session=test-session',
+        'Content-Type': 'application/json',
+      },
+      body: '{}',
+    });
+    assert.equal(response.status, 403, path);
+    assert.equal((await response.json()).error.code, 'ACCESS_DENIED', path);
+  }
+});
+
+test('librarian can move an unused copy to another book', async () => {
+  const actor = { id: '2', role: 'librarian' };
+  const authService = {
+    authenticateToken: async () => actor,
+    login: async () => {},
+    logout: async () => {},
+  };
+  let received;
+  const copyService = {
+    changeBook: async (copyId, input, requestActor, requestKey) => {
+      received = { copyId, input, actor: requestActor, requestKey };
+      return { id: copyId, bookId: input.bookId };
+    },
+  };
+  const baseUrl = await startTestServer(
+    { query: async () => ({}) },
+    { services: { authService, catalogService: {}, copyService } },
+  );
+
+  const response = await fetch(`${baseUrl}/api/v1/copies/12/book`, {
+    method: 'PATCH',
+    headers: {
+      Cookie: 'obriy_session=test-session',
+      'Content-Type': 'application/json',
+      'Idempotency-Key': 'change-copy-book-http-1',
+    },
+    body: JSON.stringify({ version: '1', bookId: '9', confirmBookChange: true }),
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(received.copyId, '12');
+  assert.equal(received.input.bookId, '9');
+  assert.equal(received.actor, actor);
+  assert.equal(received.requestKey, 'change-copy-book-http-1');
+});

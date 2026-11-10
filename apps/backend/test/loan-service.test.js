@@ -292,3 +292,106 @@ test('found copy requires a reason and returns its new state', async () => {
   assert.equal(result.isLost, false);
   assert.equal(result.version, '4');
 });
+
+test('manager correction appends a new loan status instead of editing history directly', async () => {
+  let received;
+  const repository = {
+    correctLoanStatus: async (loanId, input) => {
+      received = { loanId, ...input };
+      return { status: 'corrected', loanId };
+    },
+    findById: async () => ({ id: '20', status: 'lost', reader: { id: '4' }, version: '4' }),
+  };
+  const service = new LoanService(repository);
+
+  const result = await service.correctLoanStatus(
+    '20',
+    {
+      version: '3',
+      status: 'lost',
+      comment: ' Помилково зареєстровано повернення ',
+      confirmCorrection: true,
+    },
+    actor,
+    'correct-loan-20',
+  );
+
+  assert.deepEqual(received, {
+    loanId: '20',
+    version: '3',
+    status: 'lost',
+    comment: 'Помилково зареєстровано повернення',
+    condition: null,
+    defectDescription: null,
+    actorId: '1',
+    requestKey: 'correct-loan-20',
+  });
+  assert.equal(result.status, 'lost');
+});
+
+test('correction to returned requires the actual physical condition', async () => {
+  const service = new LoanService({});
+
+  await assert.rejects(
+    service.correctLoanStatus(
+      '20',
+      {
+        version: '3',
+        status: 'returned',
+        comment: 'Виправлення',
+        confirmCorrection: true,
+      },
+      actor,
+      'correct-return-20',
+    ),
+    (error) => error.code === 'VALIDATION_ERROR' && Boolean(error.details.fields.condition),
+  );
+});
+
+test('anonymized reader debt cannot be reopened through status correction', async () => {
+  const service = new LoanService({
+    correctLoanStatus: async () => ({ status: 'reader_anonymized' }),
+  });
+
+  await assert.rejects(
+    service.correctLoanStatus(
+      '20',
+      {
+        version: '3',
+        status: 'lost',
+        comment: 'Виявлено помилку',
+        confirmCorrection: true,
+      },
+      actor,
+      'correct-anonymized-20',
+    ),
+    (error) => error.code === 'READER_PERSONAL_DATA_DELETED' && error.status === 422,
+  );
+});
+
+test('erroneous return after anonymization returns the newly lost copy', async () => {
+  let received;
+  const repository = {
+    recordErroneousReturn: async (loanId, input) => {
+      received = { loanId, ...input };
+      return { status: 'recorded', copyId: '8' };
+    },
+    findCopyById: async () => ({ id: '8', isLost: true, version: '5' }),
+  };
+  const service = new LoanService(repository);
+
+  const result = await service.recordErroneousReturn(
+    '20',
+    {
+      version: '4',
+      comment: 'Примірник фактично відсутній',
+      confirmCorrection: true,
+    },
+    actor,
+    'erroneous-return-20',
+  );
+
+  assert.equal(received.comment, 'Примірник фактично відсутній');
+  assert.equal(received.requestKey, 'erroneous-return-20');
+  assert.equal(result.isLost, true);
+});

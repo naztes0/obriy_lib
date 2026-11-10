@@ -87,4 +87,38 @@ export function registerLoanRoutes(router, { authService, loanService }) {
       sendData(response, 200, copy, requestId);
     }),
   );
+
+  router.post(
+    '/api/v1/loans/:loanId/correct-status',
+    requireRole(
+      authService,
+      ['manager'],
+      async ({ request, response, requestId, params, actor }) => {
+        const loan = await loanService.correctLoanStatus(
+          params.loanId,
+          await readJsonBody(request),
+          actor,
+          request.headers['idempotency-key'],
+        );
+        sendData(response, 200, loan, requestId);
+      },
+    ),
+  );
+
+  router.post(
+    '/api/v1/loans/:loanId/erroneous-return',
+    requireRole(
+      authService,
+      ['manager'],
+      async ({ request, response, requestId, params, actor }) => {
+        const copy = await loanService.recordErroneousReturn(
+          params.loanId,
+          await readJsonBody(request),
+          actor,
+          request.headers['idempotency-key'],
+        );
+        sendData(response, 200, copy, requestId);
+      },
+    ),
+  );
 }

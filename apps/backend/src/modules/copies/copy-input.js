@@ -218,3 +218,22 @@ export function validateCopyWriteOff(input) {
   if (Object.keys(errors).length) throwValidation(errors);
   return { version, reason };
 }
+
+export function validateCopyBookChange(input) {
+  requireObject(input);
+  const errors = {};
+  const version = readVersion(input.version, errors);
+  const normalizedBookId = Number.isSafeInteger(input.bookId) ? String(input.bookId) : input.bookId;
+  if (typeof normalizedBookId !== 'string' || !/^[1-9][0-9]*$/.test(normalizedBookId)) {
+    errors.bookId = 'Виберіть коректне видання.';
+  }
+  const reason = readReason(input.reason, errors);
+  readConfirmation(
+    input,
+    'confirmBookChange',
+    'Підтвердьте зміну видання для примірника.',
+    errors,
+  );
+  if (Object.keys(errors).length) throwValidation(errors);
+  return { version, bookId: normalizedBookId, reason };
+}

@@ -2,6 +2,8 @@ import { AppError } from '../../http/app-error.js';
 import {
   validateIdempotencyKey,
   validateCopyFound,
+  validateErroneousReturn,
+  validateLoanCorrection,
   validateLoanExtension,
   validateLoanIssue,
   validateLoanReturn,
@@ -263,6 +265,96 @@ export class LoanService {
       );
     }
     if (result.status === 'version_conflict') throw versionConflict();
+    return await this.repository.findCopyById(result.copyId);
+  }
+
+  async correctLoanStatus(loanId, input, actor, idempotencyKey) {
+    validateLoanId(loanId);
+    const values = validateLoanCorrection(input);
+    const requestKey = validateIdempotencyKey(idempotencyKey);
+    const result = await this.repository.correctLoanStatus(loanId, {
+      ...values,
+      actorId: actor.id,
+      requestKey,
+    });
+    const errors = {
+      loan_not_found: [404, 'LOAN_NOT_FOUND', 'Видачу не знайдено.'],
+      same_status: [422, 'LOAN_STATUS_UNCHANGED', 'Новий статус збігається з поточним.'],
+      later_loan_conflict: [
+        409,
+        'LATER_LOAN_CONFLICT',
+        'Статус не можна виправити, оскільки примірник уже має пізнішу видачу.',
+      ],
+      copy_has_open_loan: [
+        409,
+        'COPY_ALREADY_ON_LOAN',
+        'Інша незавершена видача цього примірника не дозволяє виправлення.',
+      ],
+      reader_anonymized: [
+        422,
+        'READER_PERSONAL_DATA_DELETED',
+        'Після видалення особистих даних не можна поновлювати борг читача.',
+      ],
+    };
+    if (result.status === 'version_conflict') throw versionConflict();
+    if (errors[result.status]) {
+      const [status, code, message] = errors[result.status];
+      throw new AppError(status, code, message);
+    }
+    const loan = await this.getLoan(result.loanId);
+    if (['returned', 'compensated'].includes(loan.status) && loan.reader?.id) {
+      await this.afterObligationClosed(loan.reader.id);
+    }
+    return loan;
+  }
+
+  async recordErroneousReturn(loanId, input, actor, idempotencyKey) {
+    validateLoanId(loanId);
+    const values = validateErroneousReturn(input);
+    const requestKey = validateIdempotencyKey(idempotencyKey);
+    const result = await this.repository.recordErroneousReturn(loanId, {
+      ...values,
+      actorId: actor.id,
+      requestKey,
+    });
+    const errors = {
+      loan_not_found: [404, 'LOAN_NOT_FOUND', 'Видачу не знайдено.'],
+      not_returned: [
+        422,
+        'LOAN_NOT_RETURNED',
+        'Помилкове повернення можна зафіксувати лише для завершеної поверненням видачі.',
+      ],
+      reader_not_anonymized: [
+        422,
+        'READER_PERSONAL_DATA_PRESENT',
+        'Поки дані читача не видалені, виправте статус самої видачі.',
+      ],
+      later_operation_conflict: [
+        409,
+        'LATER_OPERATION_CONFLICT',
+        'Пізніші операції з примірником не дозволяють зафіксувати помилкове повернення.',
+      ],
+      copy_has_open_loan: [
+        409,
+        'COPY_ALREADY_ON_LOAN',
+        'Примірник уже має чинну незавершену видачу.',
+      ],
+      already_recorded: [
+        422,
+        'ERRONEOUS_RETURN_ALREADY_RECORDED',
+        'Помилкове повернення вже зафіксовано.',
+      ],
+      return_event_not_found: [
+        422,
+        'RETURN_EVENT_NOT_FOUND',
+        'У видачі немає події повернення, на яку можна послатися. Спочатку звірте історію.',
+      ],
+    };
+    if (result.status === 'version_conflict') throw versionConflict();
+    if (errors[result.status]) {
+      const [status, code, message] = errors[result.status];
+      throw new AppError(status, code, message);
+    }
     return await this.repository.findCopyById(result.copyId);
   }
 }

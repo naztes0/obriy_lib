@@ -131,4 +131,17 @@ export function registerCopyRoutes(router, { authService, copyService }) {
       },
     ),
   );
+
+  router.patch(
+    '/api/v1/copies/:copyId/book',
+    requireAuthentication(authService, async ({ request, response, requestId, params, actor }) => {
+      const copy = await copyService.changeBook(
+        params.copyId,
+        await readJsonBody(request),
+        actor,
+        request.headers['idempotency-key'],
+      );
+      sendData(response, 200, copy, requestId);
+    }),
+  );
 }

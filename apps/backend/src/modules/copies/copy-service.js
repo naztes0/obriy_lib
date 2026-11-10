@@ -3,6 +3,7 @@ import { readPagination } from '../../http/pagination.js';
 import {
   validateConditionChange,
   validateCopyArchive,
+  validateCopyBookChange,
   validateCopyCreate,
   validateCopyDelete,
   validateCopyIdempotencyKey,
@@ -268,5 +269,36 @@ export class CopyService {
       const [status, code, message] = errors[result.status];
       throw new AppError(status, code, message);
     }
+  }
+
+  async changeBook(copyId, input, actor, idempotencyKey) {
+    validateId(copyId, 'copy');
+    const values = validateCopyBookChange(input);
+    const requestKey = validateCopyIdempotencyKey(idempotencyKey);
+    const result = await this.repository.changeBook(copyId, {
+      ...values,
+      actorId: actor.id,
+      requestKey,
+    });
+    this.assertLifecycleResult(result, {
+      archived: [
+        422,
+        'COPY_ARCHIVED',
+        'Архівний примірник не можна переносити до іншого видання.',
+      ],
+      book_not_found: [404, 'BOOK_NOT_FOUND', 'Нове видання не знайдено.'],
+      book_archived: [
+        422,
+        'BOOK_ARCHIVED',
+        'Примірник не можна перенести до архівного видання.',
+      ],
+      same_book: [422, 'COPY_BOOK_UNCHANGED', 'Примірник уже належить цьому виданню.'],
+      has_loans: [
+        422,
+        'COPY_HAS_LOAN_HISTORY',
+        'Після першої видачі змінити видання примірника неможливо.',
+      ],
+    });
+    return await this.getCopy(result.copyId);
   }
 }

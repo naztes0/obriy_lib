@@ -1,6 +1,7 @@
 import { AppError } from '../../http/app-error.js';
 
 const CONDITIONS = new Set(['good', 'worn', 'damaged']);
+const LOAN_STATUSES = new Set(['issued', 'lost', 'returned', 'compensated']);
 
 function validationError(fields) {
   throw new AppError(400, 'VALIDATION_ERROR', 'Перевірте дані операції.', { fields });
@@ -134,6 +135,69 @@ export function validateCopyFound(input) {
   const reason = readReason(input.reason, 'reason', errors);
   if (Object.keys(errors).length) validationError(errors);
   return { version, reason };
+}
+
+export function validateLoanCorrection(input) {
+  requireObject(input);
+  const errors = {};
+  const version = readVersion(input.version, errors);
+  if (!LOAN_STATUSES.has(input.status)) {
+    errors.status = 'Допустимі значення: issued, lost, returned або compensated.';
+  }
+  const comment = readReason(input.comment, 'comment', errors);
+  if (input.confirmCorrection !== true) {
+    errors.confirmCorrection = 'Підтвердьте виправлення помилкової операції.';
+  }
+
+  let condition = null;
+  let defectDescription = null;
+  if (input.status === 'returned') {
+    if (!CONDITIONS.has(input.condition)) {
+      errors.condition = 'Для повернення вкажіть good, worn або damaged.';
+    } else {
+      condition = input.condition;
+    }
+    const description =
+      typeof input.defectDescription === 'string'
+        ? input.defectDescription.trim().replace(/\s+/gu, ' ')
+        : '';
+    if (condition === 'worn' || condition === 'damaged') {
+      if (!description) {
+        errors.defectDescription = 'Опишіть дефект зношеного або пошкодженого примірника.';
+      } else {
+        defectDescription = description;
+      }
+    } else if (
+      input.defectDescription !== undefined &&
+      input.defectDescription !== null &&
+      input.defectDescription !== ''
+    ) {
+      errors.defectDescription = 'Для стану good опис дефекту не вказується.';
+    }
+  } else if (input.condition !== undefined || input.defectDescription !== undefined) {
+    errors.condition = 'Фізичний стан передається лише при виправленні статусу на returned.';
+  }
+
+  if (Object.keys(errors).length) validationError(errors);
+  return {
+    version,
+    status: input.status,
+    comment,
+    condition,
+    defectDescription,
+  };
+}
+
+export function validateErroneousReturn(input) {
+  requireObject(input);
+  const errors = {};
+  const version = readVersion(input.version, errors);
+  const comment = readReason(input.comment, 'comment', errors);
+  if (input.confirmCorrection !== true) {
+    errors.confirmCorrection = 'Підтвердьте фіксацію помилкового повернення.';
+  }
+  if (Object.keys(errors).length) validationError(errors);
+  return { version, comment };
 }
 
 export function validateIdempotencyKey(value) {

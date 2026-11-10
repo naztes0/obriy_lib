@@ -266,3 +266,55 @@ test('final write-off reports that copy history and report rows were deleted', a
     reportsChanged: true,
   });
 });
+
+test('copy can be moved to another book only through a confirmed audited operation', async () => {
+  let received;
+  const service = new CopyService({
+    changeBook: async (copyId, input) => {
+      received = { copyId, ...input };
+      return { status: 'changed', copyId };
+    },
+    findCopyById: async () => ({ id: '5', bookId: '9', version: '2' }),
+  });
+
+  const result = await service.changeBook(
+    '5',
+    {
+      version: '1',
+      bookId: '9',
+      reason: 'Помилково вибрано видання',
+      confirmBookChange: true,
+    },
+    actor,
+    'change-copy-book-5',
+  );
+
+  assert.deepEqual(received, {
+    copyId: '5',
+    version: '1',
+    bookId: '9',
+    reason: 'Помилково вибрано видання',
+    actorId: '7',
+    requestKey: 'change-copy-book-5',
+  });
+  assert.equal(result.bookId, '9');
+});
+
+test('copy cannot be moved after its first loan', async () => {
+  const service = new CopyService({ changeBook: async () => ({ status: 'has_loans' }) });
+
+  await assert.rejects(
+    service.changeBook(
+      '5',
+      {
+        version: '1',
+        bookId: '9',
+        reason: 'Виправлення',
+        confirmBookChange: true,
+      },
+      actor,
+      'change-issued-copy-book',
+    ),
+    (error) => error.code === 'COPY_HAS_LOAN_HISTORY' && error.status === 422,
+  );
+});

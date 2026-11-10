@@ -571,6 +571,258 @@ export class LoanRepository {
     }
   }
 
+  async correctLoanStatus(
+    loanId,
+    { version, status, comment, condition, defectDescription, actorId, requestKey },
+  ) {
+    const client = await this.pool.connect();
+    const operation = `correct_loan_status:${loanId}`;
+    try {
+      await client.query('BEGIN');
+      const reservation = await reserveRequest(client, { actorId, operation, requestKey });
+      if (!reservation.isNew) {
+        await client.query('COMMIT');
+        return { status: 'repeated', loanId: reservation.resultId };
+      }
+      const current = await client.query(
+        `SELECT l.status, l.version, l.reader_id, l.copy_id, l.issued_at,
+                l.issue_condition, l.issue_defect_snapshot,
+                l.returned_at, l.compensated_at,
+                bc.condition AS copy_condition,
+                bc.defect_description AS copy_defect_description,
+                bc.is_lost, r.personal_data_deleted_at
+         FROM loans l
+         JOIN book_copies bc ON bc.id = l.copy_id
+         JOIN readers r ON r.id = l.reader_id
+         WHERE l.id = $1
+         FOR UPDATE OF l, bc, r`,
+        [loanId],
+      );
+      if (!current.rowCount) return await this.rollbackStatus(client, 'loan_not_found');
+      const row = current.rows[0];
+      if (String(row.version) !== version) return await this.rollbackStatus(client, 'version_conflict');
+      if (row.status === status) return await this.rollbackStatus(client, 'same_status');
+
+      const laterLoan = await client.query(
+        `SELECT 1 FROM loans
+         WHERE copy_id = $1 AND id <> $2
+           AND (issued_at > $3 OR (issued_at = $3 AND id > $2))
+         LIMIT 1`,
+        [row.copy_id, loanId, row.issued_at],
+      );
+      if (laterLoan.rowCount) return await this.rollbackStatus(client, 'later_loan_conflict');
+      if (['issued', 'lost'].includes(status) && row.personal_data_deleted_at !== null) {
+        return await this.rollbackStatus(client, 'reader_anonymized');
+      }
+      if (['issued', 'lost'].includes(status)) {
+        const otherOpenLoan = await client.query(
+          `SELECT 1 FROM loans
+           WHERE copy_id = $1 AND id <> $2 AND status IN ('issued', 'lost')
+           LIMIT 1`,
+          [row.copy_id, loanId],
+        );
+        if (otherOpenLoan.rowCount) return await this.rollbackStatus(client, 'copy_has_open_loan');
+      }
+
+      const copyCondition = status === 'returned' ? condition : row.issue_condition;
+      const copyDefectDescription =
+        status === 'returned' ? defectDescription : row.issue_defect_snapshot;
+      const isLost = ['lost', 'compensated'].includes(status);
+      const statusEvent = await client.query(
+        `INSERT INTO loan_status_events (
+           loan_id, from_status, to_status, actor_id, comment, request_key
+         ) VALUES ($1, $2, $3, $4, $5, $6)
+         RETURNING id`,
+        [loanId, row.status, status, actorId, comment, requestKey],
+      );
+      await client.query(
+        `UPDATE loans
+         SET status = $2,
+             returned_at = CASE WHEN $2 = 'returned' THEN now() ELSE NULL END,
+             compensated_at = CASE WHEN $2 = 'compensated' THEN now() ELSE NULL END,
+             return_condition = CASE WHEN $2 = 'returned' THEN $3 ELSE NULL END,
+             return_defect_snapshot = CASE WHEN $2 = 'returned' THEN $4 ELSE NULL END,
+             version = version + 1
+         WHERE id = $1`,
+        [loanId, status, condition, defectDescription],
+      );
+      await client.query(
+        `UPDATE book_copies
+         SET condition = $2, defect_description = $3, is_lost = $4,
+             version = version + 1
+         WHERE id = $1`,
+        [row.copy_id, copyCondition, copyDefectDescription, isLost],
+      );
+      await client.query(
+        `INSERT INTO book_copy_events (
+           copy_id, kind, old_value, new_value, reason, actor_id, loan_id,
+           related_loan_status_event_id, request_key
+         ) VALUES ($1, 'loan_status_corrected', $2, $3, $4, $5, $6, $7, $8)`,
+        [
+          row.copy_id,
+          JSON.stringify({
+            loanStatus: row.status,
+            condition: row.copy_condition,
+            defectDescription: row.copy_defect_description,
+            isLost: row.is_lost,
+          }),
+          JSON.stringify({
+            loanStatus: status,
+            condition: copyCondition,
+            defectDescription: copyDefectDescription,
+            isLost,
+          }),
+          comment,
+          actorId,
+          loanId,
+          statusEvent.rows[0].id,
+          requestKey,
+        ],
+      );
+      await completeRequest(client, { actorId, operation, requestKey, resultId: loanId });
+      await client.query('COMMIT');
+      return { status: 'corrected', loanId };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async recordErroneousReturn(loanId, { version, comment, actorId, requestKey }) {
+    const client = await this.pool.connect();
+    const operation = `record_erroneous_return:${loanId}`;
+    try {
+      await client.query('BEGIN');
+      const reservation = await reserveRequest(client, { actorId, operation, requestKey });
+      if (!reservation.isNew) {
+        await client.query('COMMIT');
+        return { status: 'repeated', copyId: reservation.resultId };
+      }
+      const current = await client.query(
+        `SELECT l.status, l.version, l.copy_id, l.issued_at, l.returned_at,
+                bc.is_lost, r.personal_data_deleted_at
+         FROM loans l
+         JOIN book_copies bc ON bc.id = l.copy_id
+         JOIN readers r ON r.id = l.reader_id
+         WHERE l.id = $1
+         FOR UPDATE OF l, bc, r`,
+        [loanId],
+      );
+      if (!current.rowCount) return await this.rollbackStatus(client, 'loan_not_found');
+      const row = current.rows[0];
+      if (String(row.version) !== version) return await this.rollbackStatus(client, 'version_conflict');
+      if (row.status !== 'returned') return await this.rollbackStatus(client, 'not_returned');
+      if (row.personal_data_deleted_at === null) {
+        return await this.rollbackStatus(client, 'reader_not_anonymized');
+      }
+      const existing = await client.query(
+        `SELECT 1 FROM book_copy_events
+         WHERE loan_id = $1 AND kind = 'erroneous_return'
+         LIMIT 1`,
+        [loanId],
+      );
+      if (existing.rowCount) return await this.rollbackStatus(client, 'already_recorded');
+
+      const laterLoan = await client.query(
+        `SELECT 1 FROM loans
+         WHERE copy_id = $1 AND id <> $2
+           AND (issued_at > $3 OR (issued_at = $3 AND id > $2))
+         LIMIT 1`,
+        [row.copy_id, loanId, row.issued_at],
+      );
+      if (laterLoan.rowCount || row.is_lost) {
+        return await this.rollbackStatus(client, 'later_operation_conflict');
+      }
+      const openLoan = await client.query(
+        `SELECT 1 FROM loans
+         WHERE copy_id = $1 AND id <> $2 AND status IN ('issued', 'lost')
+         LIMIT 1`,
+        [row.copy_id, loanId],
+      );
+      if (openLoan.rowCount) return await this.rollbackStatus(client, 'copy_has_open_loan');
+
+      const returnedCopyEvent = await client.query(
+        `SELECT id, occurred_at FROM book_copy_events
+         WHERE copy_id = $1 AND loan_id = $2 AND kind = 'returned'
+         ORDER BY occurred_at DESC, id DESC
+         LIMIT 1`,
+        [row.copy_id, loanId],
+      );
+      if (returnedCopyEvent.rowCount) {
+        const source = returnedCopyEvent.rows[0];
+        const laterEvent = await client.query(
+          `SELECT 1
+           FROM book_copy_events later
+           JOIN book_copy_events source ON source.id = $2
+           WHERE later.copy_id = $1
+             AND (later.occurred_at, later.id) > (source.occurred_at, source.id)
+           LIMIT 1`,
+          [row.copy_id, source.id],
+        );
+        if (laterEvent.rowCount) return await this.rollbackStatus(client, 'later_operation_conflict');
+      } else {
+        const laterEvent = await client.query(
+          `SELECT 1
+           FROM book_copy_events later
+           JOIN loans source ON source.id = $2
+           WHERE later.copy_id = $1
+             AND later.occurred_at > source.returned_at
+             AND NOT (later.kind = 'returned' AND later.loan_id = source.id)
+           LIMIT 1`,
+          [row.copy_id, loanId],
+        );
+        if (laterEvent.rowCount) return await this.rollbackStatus(client, 'later_operation_conflict');
+      }
+
+      const returnedStatusEvent = await client.query(
+        `SELECT id FROM loan_status_events
+         WHERE loan_id = $1 AND to_status = 'returned'
+         ORDER BY occurred_at DESC, id DESC
+         LIMIT 1`,
+        [loanId],
+      );
+      if (!returnedStatusEvent.rowCount) {
+        return await this.rollbackStatus(client, 'return_event_not_found');
+      }
+      await client.query(
+        `UPDATE book_copies SET is_lost = true, version = version + 1 WHERE id = $1`,
+        [row.copy_id],
+      );
+      await client.query('UPDATE loans SET version = version + 1 WHERE id = $1', [loanId]);
+      await client.query(
+        `INSERT INTO book_copy_events (
+           copy_id, kind, old_value, new_value, reason, actor_id, loan_id,
+           related_loan_status_event_id, request_key
+         ) VALUES ($1, 'erroneous_return', $2, $3, $4, $5, $6, $7, $8)`,
+        [
+          row.copy_id,
+          JSON.stringify({ isLost: false }),
+          JSON.stringify({ isLost: true, responsibleReaderKnown: false }),
+          comment,
+          actorId,
+          loanId,
+          returnedStatusEvent.rows[0].id,
+          requestKey,
+        ],
+      );
+      await completeRequest(client, {
+        actorId,
+        operation,
+        requestKey,
+        resultId: row.copy_id,
+      });
+      await client.query('COMMIT');
+      return { status: 'recorded', copyId: String(row.copy_id) };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   async rollbackStatus(client, status) {
     await client.query('ROLLBACK');
     return { status };
