@@ -9,6 +9,7 @@ import {
   validateReaderRestore,
   validateReaderUpdate,
 } from './reader-input.js';
+import { generateReaderTicketPdf } from './reader-ticket-pdf.js';
 
 const FILTER_LIMIT = 200;
 
@@ -51,9 +52,10 @@ function versionConflict() {
 }
 
 export class ReaderService {
-  constructor(repository, { now = () => new Date() } = {}) {
+  constructor(repository, { now = () => new Date(), ticketPdf = generateReaderTicketPdf } = {}) {
     this.repository = repository;
     this.now = now;
+    this.ticketPdf = ticketPdf;
   }
 
   async listReaders(searchParams) {
@@ -93,6 +95,40 @@ export class ReaderService {
     const reader = await this.repository.findById(readerId);
     if (!reader) throw new AppError(404, 'READER_NOT_FOUND', 'Читача не знайдено.');
     return reader;
+  }
+
+  async getElectronicTicketPdf(readerId) {
+    validateReaderId(readerId);
+    const ticket = await this.repository.findTicketByReaderId(readerId);
+    if (!ticket) throw new AppError(404, 'READER_NOT_FOUND', 'Читача не знайдено.');
+    if (ticket.personalDataDeletedAt || !ticket.fullName) {
+      throw new AppError(
+        410,
+        'READER_PERSONAL_DATA_DELETED',
+        'Персональні дані читача вже знеособлено.',
+      );
+    }
+    if (ticket.isArchived) {
+      throw new AppError(422, 'READER_ARCHIVED', 'Для архівного читача квиток недоступний.');
+    }
+    if (
+      ticket.category !== 'student' ||
+      ticket.ticketType !== 'electronic' ||
+      !ticket.className ||
+      !ticket.ticketIssuedOn ||
+      !ticket.ticketExpiresOn
+    ) {
+      throw new AppError(
+        422,
+        'ELECTRONIC_TICKET_UNAVAILABLE',
+        'Електронний квиток доступний лише учню, для якого його вже сформовано.',
+      );
+    }
+
+    return {
+      buffer: await this.ticketPdf(ticket),
+      filename: `electronic-ticket-${ticket.ticketNumber.replace(/[^a-zA-Z0-9_-]/g, '_')}.pdf`,
+    };
   }
 
   async checkNamesakes(fullName, { excludeReaderId = null, confirmed = false } = {}) {

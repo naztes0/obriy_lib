@@ -1,5 +1,5 @@
 import { readJsonBody } from '../../http/request-body.js';
-import { sendData } from '../../http/response.js';
+import { sendBuffer, sendData } from '../../http/response.js';
 import { requireAuthentication, requireRole } from '../auth/auth-guard.js';
 
 export function registerReaderRoutes(router, { authService, readerService }) {
@@ -16,6 +16,16 @@ export function registerReaderRoutes(router, { authService, readerService }) {
     requireAuthentication(authService, async ({ response, requestId, params }) => {
       const reader = await readerService.getReader(params.readerId);
       sendData(response, 200, reader, requestId);
+    }),
+  );
+
+  router.get(
+    '/api/v1/readers/:readerId/ticket.pdf',
+    requireAuthentication(authService, async ({ response, requestId, params }) => {
+      const ticket = await readerService.getElectronicTicketPdf(params.readerId);
+      sendBuffer(response, 200, ticket.buffer, 'application/pdf', requestId, {
+        'Content-Disposition': `attachment; filename="${ticket.filename}"`,
+      });
     }),
   );
 

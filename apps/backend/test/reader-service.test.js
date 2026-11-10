@@ -49,6 +49,66 @@ test('reader list combines search, archive filter and pagination', async () => {
   assert.equal(result.meta.totalPages, 2);
 });
 
+test('electronic ticket PDF reuses the stored ticket data', async () => {
+  const ticket = {
+    readerId: '10',
+    personalDataDeletedAt: null,
+    fullName: 'Іваненко Іван Іванович',
+    category: 'student',
+    className: '11-А',
+    ticketNumber: 'E-42',
+    ticketType: 'electronic',
+    ticketIssuedOn: '2026-11-10',
+    ticketExpiresOn: '2027-06-30',
+    isArchived: false,
+  };
+  let received;
+  const service = new ReaderService(
+    { findTicketByReaderId: async () => ticket },
+    {
+      ticketPdf: async (value) => {
+        received = value;
+        return Buffer.from('%PDF-test');
+      },
+    },
+  );
+
+  const result = await service.getElectronicTicketPdf('10');
+
+  assert.equal(received, ticket);
+  assert.equal(result.filename, 'electronic-ticket-E-42.pdf');
+  assert.equal(result.buffer.toString(), '%PDF-test');
+});
+
+test('physical, archived and anonymized readers cannot download an electronic ticket', async () => {
+  const baseTicket = {
+    readerId: '10',
+    personalDataDeletedAt: null,
+    fullName: 'Іваненко Іван',
+    category: 'student',
+    className: '11-А',
+    ticketNumber: 'T-10',
+    ticketType: 'existing',
+    ticketIssuedOn: null,
+    ticketExpiresOn: '2027-06-30',
+    isArchived: false,
+  };
+
+  for (const [changes, expectedCode] of [
+    [{}, 'ELECTRONIC_TICKET_UNAVAILABLE'],
+    [{ ticketType: 'electronic', ticketIssuedOn: '2026-11-10', isArchived: true }, 'READER_ARCHIVED'],
+    [{ fullName: null, personalDataDeletedAt: new Date() }, 'READER_PERSONAL_DATA_DELETED'],
+  ]) {
+    const service = new ReaderService({
+      findTicketByReaderId: async () => ({ ...baseTicket, ...changes }),
+    });
+    await assert.rejects(
+      service.getElectronicTicketPdf('10'),
+      (error) => error.code === expectedCode,
+    );
+  }
+});
+
 test('reader creation validates a student and passes the actor', async () => {
   let created;
   const repository = {

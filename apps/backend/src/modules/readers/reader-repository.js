@@ -193,6 +193,35 @@ export class ReaderRepository {
     };
   }
 
+  async findTicketByReaderId(readerId) {
+    const result = await this.pool.query(
+      `SELECT r.id AS reader_id, r.personal_data_deleted_at,
+              rpd.full_name, rpd.category, rpd.ticket_number, rpd.ticket_type,
+              rpd.ticket_issued_on, rpd.ticket_expires_on, rpd.archived_at,
+              sc.name AS class_name
+       FROM readers r
+       LEFT JOIN reader_personal_data rpd ON rpd.reader_id = r.id
+       LEFT JOIN school_classes sc ON sc.id = rpd.class_id
+       WHERE r.id = $1`,
+      [readerId],
+    );
+    if (!result.rowCount) return null;
+
+    const row = result.rows[0];
+    return {
+      readerId: String(row.reader_id),
+      personalDataDeletedAt: row.personal_data_deleted_at,
+      fullName: row.full_name,
+      category: row.category,
+      className: row.class_name,
+      ticketNumber: row.ticket_number,
+      ticketType: row.ticket_type,
+      ticketIssuedOn: toDateOnly(row.ticket_issued_on),
+      ticketExpiresOn: toDateOnly(row.ticket_expires_on),
+      isArchived: row.archived_at !== null,
+    };
+  }
+
   async findNamesakes(fullNameNormalized, excludeReaderId = null) {
     const result = await this.pool.query(
       `SELECT reader_id, full_name, ticket_number, archived_at

@@ -411,6 +411,44 @@ test('reader create route passes JSON and the actor to the reader service', asyn
   assert.deepEqual(received, { input, actor });
 });
 
+test('electronic reader ticket route returns a downloadable PDF', async () => {
+  const authService = {
+    authenticateToken: async () => ({ id: '2', role: 'librarian' }),
+    login: async () => {},
+    logout: async () => {},
+  };
+  const readerService = {
+    getElectronicTicketPdf: async (readerId) => {
+      assert.equal(readerId, '12');
+      return { buffer: Buffer.from('%PDF-test'), filename: 'electronic-ticket-E-12.pdf' };
+    },
+  };
+  const baseUrl = await startTestServer(
+    { query: async () => ({}) },
+    {
+      services: {
+        authService,
+        catalogService: {},
+        copyService: {},
+        schoolClassService: {},
+        readerService,
+      },
+    },
+  );
+
+  const response = await fetch(`${baseUrl}/api/v1/readers/12/ticket.pdf`, {
+    headers: { Cookie: 'obriy_session=test-session' },
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('content-type'), 'application/pdf');
+  assert.equal(
+    response.headers.get('content-disposition'),
+    'attachment; filename="electronic-ticket-E-12.pdf"',
+  );
+  assert.equal(Buffer.from(await response.arrayBuffer()).toString(), '%PDF-test');
+});
+
 test('reader archive route passes JSON, actor and idempotency key', async () => {
   const actor = { id: '2', role: 'librarian' };
   const authService = {
