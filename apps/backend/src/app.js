@@ -18,6 +18,9 @@ import { LoanService } from './modules/loans/loan-service.js';
 import { ReaderRepository } from './modules/readers/reader-repository.js';
 import { registerReaderRoutes } from './modules/readers/reader-routes.js';
 import { ReaderService } from './modules/readers/reader-service.js';
+import { ReportRepository } from './modules/reports/report-repository.js';
+import { registerReportRoutes } from './modules/reports/report-routes.js';
+import { ReportService } from './modules/reports/report-service.js';
 import { RestrictionRepository } from './modules/restrictions/restriction-repository.js';
 import { registerRestrictionRoutes } from './modules/restrictions/restriction-routes.js';
 import { RestrictionService } from './modules/restrictions/restriction-service.js';
@@ -54,6 +57,7 @@ export function createApp({ pool, config = {}, logger = console, services = {} }
   const textbookBatchService =
     services.textbookBatchService ??
     new TextbookBatchService(new TextbookBatchRepository(pool));
+  const reportService = services.reportService ?? new ReportService(new ReportRepository(pool));
 
   const router = new Router();
   registerHealthRoutes(router, { pool, logger });
@@ -69,6 +73,7 @@ export function createApp({ pool, config = {}, logger = console, services = {} }
   registerRestrictionRoutes(router, { authService, restrictionService });
   registerLoanRoutes(router, { authService, loanService });
   registerTextbookBatchRoutes(router, { authService, textbookBatchService });
+  registerReportRoutes(router, { authService, reportService });
 
   return async function handleRequest(request, response) {
     const requestId = randomUUID();

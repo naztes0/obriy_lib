@@ -712,3 +712,52 @@ test('textbook batch confirmation route passes JSON, actor and idempotency key',
   assert.equal(response.status, 201);
   assert.deepEqual(received, { input, actor, key: 'batch-http-1' });
 });
+
+test('report route passes its type and query parameters', async () => {
+  const authService = {
+    authenticateToken: async () => ({ id: '2', role: 'librarian' }),
+    login: async () => {},
+    logout: async () => {},
+  };
+  let received;
+  const reportService = {
+    getReport: async (type, searchParams) => {
+      received = { type, className: searchParams.get('className') };
+      return {
+        items: [{ id: '9' }],
+        meta: {
+          page: 1,
+          pageSize: 25,
+          totalItems: 1,
+          totalPages: 1,
+          summary: { loans: 1 },
+        },
+      };
+    },
+  };
+  const baseUrl = await startTestServer(
+    { query: async () => ({}) },
+    {
+      services: {
+        authService,
+        catalogService: {},
+        copyService: {},
+        schoolClassService: {},
+        readerService: {},
+        restrictionService: {},
+        loanService: {},
+        textbookBatchService: {},
+        reportService,
+      },
+    },
+  );
+
+  const response = await fetch(
+    `${baseUrl}/api/v1/reports/overdue-loans?className=${encodeURIComponent('11-А')}`,
+    { headers: { Cookie: 'obriy_session=test-session' } },
+  );
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(received, { type: 'overdue-loans', className: '11-А' });
+  assert.equal((await response.json()).meta.summary.loans, 1);
+});
