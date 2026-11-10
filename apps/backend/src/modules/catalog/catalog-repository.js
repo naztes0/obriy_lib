@@ -49,6 +49,31 @@ async function saveAuthors(client, bookId, authors) {
   }
 }
 
+async function reserveRequest(client, { actorId, operation, requestKey }) {
+  const inserted = await client.query(
+    `INSERT INTO processed_requests (actor_id, operation, request_key)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (actor_id, operation, request_key) DO NOTHING
+     RETURNING id`,
+    [actorId, operation, requestKey],
+  );
+  if (inserted.rowCount) return { isNew: true };
+  const existing = await client.query(
+    `SELECT result_entity_id FROM processed_requests
+     WHERE actor_id = $1 AND operation = $2 AND request_key = $3`,
+    [actorId, operation, requestKey],
+  );
+  return { isNew: false, resultId: String(existing.rows[0].result_entity_id) };
+}
+
+async function completeRequest(client, { actorId, operation, requestKey, resultId }) {
+  await client.query(
+    `UPDATE processed_requests SET result_entity_id = $4
+     WHERE actor_id = $1 AND operation = $2 AND request_key = $3`,
+    [actorId, operation, requestKey, resultId],
+  );
+}
+
 function buildFilters(filters) {
   const conditions = [];
   const values = [];
@@ -295,5 +320,161 @@ export class CatalogRepository {
       }),
       copies,
     };
+  }
+
+  async archiveBook(bookId, { version, reason, actorId, requestKey }) {
+    const client = await this.pool.connect();
+    const operation = `archive_book:${bookId}`;
+    try {
+      await client.query('BEGIN');
+      const reservation = await reserveRequest(client, { actorId, operation, requestKey });
+      if (!reservation.isNew) {
+        await client.query('COMMIT');
+        return { status: 'repeated', bookId: reservation.resultId };
+      }
+
+      const current = await client.query(
+        'SELECT archived_at, version FROM books WHERE id = $1 FOR UPDATE',
+        [bookId],
+      );
+      if (!current.rowCount) return await this.rollbackStatus(client, 'not_found');
+      const row = current.rows[0];
+      if (row.archived_at !== null) return await this.rollbackStatus(client, 'already_archived');
+      if (String(row.version) !== version) return await this.rollbackStatus(client, 'version_conflict');
+
+      // Lock every copy before checking obligations so a concurrent issue cannot slip between
+      // the check and the cascading archive.
+      await client.query('SELECT id FROM book_copies WHERE book_id = $1 FOR UPDATE', [bookId]);
+
+      const openLoans = await client.query(
+        `SELECT 1
+         FROM loans l
+         JOIN book_copies bc ON bc.id = l.copy_id
+         WHERE bc.book_id = $1 AND l.status IN ('issued', 'lost')
+         LIMIT 1`,
+        [bookId],
+      );
+      if (openLoans.rowCount) return await this.rollbackStatus(client, 'open_loans');
+
+      const archivedCopies = await client.query(
+        `UPDATE book_copies
+         SET archived_at = now(), version = version + 1
+         WHERE book_id = $1 AND archived_at IS NULL
+         RETURNING id`,
+        [bookId],
+      );
+      for (const copy of archivedCopies.rows) {
+        await client.query(
+          `INSERT INTO book_copy_events (
+             copy_id, kind, old_value, new_value, reason, actor_id, request_key
+           ) VALUES ($1, 'archived_with_book', $2, $3, $4, $5, $6)`,
+          [
+            copy.id,
+            JSON.stringify({ isArchived: false }),
+            JSON.stringify({ isArchived: true }),
+            reason,
+            actorId,
+            requestKey,
+          ],
+        );
+      }
+      await client.query(
+        `UPDATE books SET archived_at = now(), version = version + 1 WHERE id = $1`,
+        [bookId],
+      );
+      await client.query(
+        `INSERT INTO book_record_events (
+           book_id, event_type, actor_id, reason, request_key
+         ) VALUES ($1, 'archived', $2, $3, $4)`,
+        [bookId, actorId, reason, requestKey],
+      );
+      await completeRequest(client, { actorId, operation, requestKey, resultId: bookId });
+      await client.query('COMMIT');
+      return { status: 'archived', bookId };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async restoreBook(bookId, { version, actorId, requestKey }) {
+    const client = await this.pool.connect();
+    const operation = `restore_book:${bookId}`;
+    try {
+      await client.query('BEGIN');
+      const reservation = await reserveRequest(client, { actorId, operation, requestKey });
+      if (!reservation.isNew) {
+        await client.query('COMMIT');
+        return { status: 'repeated', bookId: reservation.resultId };
+      }
+      const current = await client.query(
+        'SELECT archived_at, version FROM books WHERE id = $1 FOR UPDATE',
+        [bookId],
+      );
+      if (!current.rowCount) return await this.rollbackStatus(client, 'not_found');
+      const row = current.rows[0];
+      if (row.archived_at === null) return await this.rollbackStatus(client, 'not_archived');
+      if (String(row.version) !== version) return await this.rollbackStatus(client, 'version_conflict');
+
+      await client.query(
+        `UPDATE books SET archived_at = NULL, version = version + 1 WHERE id = $1`,
+        [bookId],
+      );
+      await client.query(
+        `INSERT INTO book_record_events (book_id, event_type, actor_id, request_key)
+         VALUES ($1, 'restored', $2, $3)`,
+        [bookId, actorId, requestKey],
+      );
+      await completeRequest(client, { actorId, operation, requestKey, resultId: bookId });
+      await client.query('COMMIT');
+      return { status: 'restored', bookId };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async deleteUnusedBook(bookId, { version, actorId, requestKey }) {
+    const client = await this.pool.connect();
+    const operation = `delete_unused_book:${bookId}`;
+    try {
+      await client.query('BEGIN');
+      const reservation = await reserveRequest(client, { actorId, operation, requestKey });
+      if (!reservation.isNew) {
+        await client.query('COMMIT');
+        return { status: 'repeated', bookId: reservation.resultId };
+      }
+      const current = await client.query('SELECT version FROM books WHERE id = $1 FOR UPDATE', [bookId]);
+      if (!current.rowCount) return await this.rollbackStatus(client, 'not_found');
+      if (String(current.rows[0].version) !== version) {
+        return await this.rollbackStatus(client, 'version_conflict');
+      }
+      const copies = await client.query('SELECT 1 FROM book_copies WHERE book_id = $1 LIMIT 1', [bookId]);
+      if (copies.rowCount) return await this.rollbackStatus(client, 'has_copies');
+      const history = await client.query(
+        'SELECT 1 FROM book_record_events WHERE book_id = $1 LIMIT 1',
+        [bookId],
+      );
+      if (history.rowCount) return await this.rollbackStatus(client, 'has_history');
+
+      await client.query('DELETE FROM books WHERE id = $1', [bookId]);
+      await completeRequest(client, { actorId, operation, requestKey, resultId: bookId });
+      await client.query('COMMIT');
+      return { status: 'deleted', bookId };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async rollbackStatus(client, status) {
+    await client.query('ROLLBACK');
+    return { status };
   }
 }

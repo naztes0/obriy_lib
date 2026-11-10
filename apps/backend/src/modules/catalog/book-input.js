@@ -4,6 +4,52 @@ function cleanText(value) {
   return value.trim().replace(/\s+/gu, ' ');
 }
 
+function requireObject(input) {
+  if (input === null || typeof input !== 'object' || Array.isArray(input)) {
+    throw new AppError(400, 'VALIDATION_ERROR', 'Перевірте дані операції.', {
+      fields: { body: 'Передайте JSON-об’єкт.' },
+    });
+  }
+}
+
+function readVersion(value, errors) {
+  const normalized = Number.isSafeInteger(value) ? String(value) : value;
+  if (typeof normalized !== 'string' || !/^[1-9][0-9]*$/.test(normalized)) {
+    errors.version = 'Передайте поточну додатну версію видання.';
+    return undefined;
+  }
+  return normalized;
+}
+
+function readOptionalReason(value, errors) {
+  if (value === undefined || value === null || value === '') return null;
+  if (typeof value !== 'string') {
+    errors.reason = 'Передайте текст причини або null.';
+    return undefined;
+  }
+  const reason = cleanText(value);
+  if (!reason || reason.length > 500) {
+    errors.reason = 'Причина має містити від 1 до 500 символів.';
+    return undefined;
+  }
+  return reason;
+}
+
+function validateLifecycleAction(input, confirmationField, confirmationMessage, { reason = false } = {}) {
+  requireObject(input);
+  const errors = {};
+  const version = readVersion(input.version, errors);
+  if (input[confirmationField] !== true) {
+    errors[confirmationField] = confirmationMessage;
+  }
+  const result = { version };
+  if (reason) result.reason = readOptionalReason(input.reason, errors);
+  if (Object.keys(errors).length) {
+    throw new AppError(400, 'VALIDATION_ERROR', 'Перевірте дані операції.', { fields: errors });
+  }
+  return result;
+}
+
 export function normalizeComparableText(value) {
   return cleanText(value).toLocaleLowerCase('uk-UA');
 }
@@ -143,4 +189,36 @@ export function validateBookUpdate(input, now = new Date()) {
     throw new AppError(400, 'EMPTY_UPDATE', 'Передайте хоча б одне поле книги для зміни.');
   }
   return result;
+}
+
+export function validateBookArchive(input) {
+  return validateLifecycleAction(
+    input,
+    'confirmArchive',
+    'Підтвердьте архівацію видання та його примірників.',
+    { reason: true },
+  );
+}
+
+export function validateBookRestore(input) {
+  return validateLifecycleAction(input, 'confirmRestore', 'Підтвердьте відновлення видання.');
+}
+
+export function validateBookDelete(input) {
+  return validateLifecycleAction(
+    input,
+    'confirmDelete',
+    'Підтвердьте незворотне видалення невикористаного видання.',
+  );
+}
+
+export function validateBookIdempotencyKey(value) {
+  if (typeof value !== 'string' || !value.trim() || value.length > 128) {
+    throw new AppError(
+      400,
+      'INVALID_IDEMPOTENCY_KEY',
+      'Передайте заголовок Idempotency-Key довжиною від 1 до 128 символів.',
+    );
+  }
+  return value.trim();
 }

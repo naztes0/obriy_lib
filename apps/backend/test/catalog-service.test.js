@@ -210,3 +210,80 @@ test('catalog rejects an invalid ISBN and a future publication year', async () =
       Boolean(error.details.fields.isbn),
   );
 });
+
+test('catalog archives a book and all lifecycle data is passed to the repository', async () => {
+  let received;
+  const service = new CatalogService({
+    archiveBook: async (bookId, input) => {
+      received = { bookId, ...input };
+      return { status: 'archived', bookId };
+    },
+    findBookById: async () => ({ id: '5', isArchived: true, version: '3', copies: [] }),
+  });
+
+  const result = await service.archiveBook(
+    '5',
+    { version: '2', reason: ' Видання вилучено з фонду ', confirmArchive: true },
+    { id: '7', role: 'librarian' },
+    'archive-book-5',
+  );
+
+  assert.deepEqual(received, {
+    bookId: '5',
+    version: '2',
+    reason: 'Видання вилучено з фонду',
+    actorId: '7',
+    requestKey: 'archive-book-5',
+  });
+  assert.equal(result.isArchived, true);
+});
+
+test('catalog refuses to archive a book with an open loan', async () => {
+  const service = new CatalogService({ archiveBook: async () => ({ status: 'open_loans' }) });
+
+  await assert.rejects(
+    service.archiveBook(
+      '5',
+      { version: '2', confirmArchive: true },
+      { id: '7', role: 'librarian' },
+      'archive-open-book',
+    ),
+    (error) => error.code === 'BOOK_HAS_OPEN_LOANS' && error.status === 422,
+  );
+});
+
+test('catalog restores only the book record', async () => {
+  const service = new CatalogService({
+    restoreBook: async (bookId) => ({ status: 'restored', bookId }),
+    findBookById: async () => ({
+      id: '5',
+      isArchived: false,
+      copies: [{ id: '8', isArchived: true }],
+    }),
+  });
+
+  const result = await service.restoreBook(
+    '5',
+    { version: '3', confirmRestore: true },
+    { id: '1', role: 'manager' },
+    'restore-book-5',
+  );
+
+  assert.equal(result.isArchived, false);
+  assert.equal(result.copies[0].isArchived, true);
+});
+
+test('catalog physically deletes only an unused book', async () => {
+  const service = new CatalogService({
+    deleteUnusedBook: async (bookId) => ({ status: 'deleted', bookId }),
+  });
+
+  const result = await service.deleteUnusedBook(
+    '9',
+    { version: '1', confirmDelete: true },
+    { id: '1', role: 'manager' },
+    'delete-book-9',
+  );
+
+  assert.deepEqual(result, { id: '9', deleted: true });
+});

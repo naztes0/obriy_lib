@@ -881,3 +881,120 @@ test('librarian cannot access staff management routes', async () => {
   assert.equal(response.status, 403);
   assert.equal((await response.json()).error.code, 'ACCESS_DENIED');
 });
+
+test('librarian can archive a copy through the inventory lifecycle route', async () => {
+  const actor = { id: '2', role: 'librarian' };
+  const authService = {
+    authenticateToken: async () => actor,
+    login: async () => {},
+    logout: async () => {},
+  };
+  let received;
+  const copyService = {
+    archiveCopy: async (copyId, input, requestActor, requestKey) => {
+      received = { copyId, input, actor: requestActor, requestKey };
+      return { id: copyId, isArchived: true };
+    },
+  };
+  const baseUrl = await startTestServer(
+    { query: async () => ({}) },
+    { services: { authService, catalogService: {}, copyService } },
+  );
+
+  const response = await fetch(`${baseUrl}/api/v1/copies/12/archive`, {
+    method: 'POST',
+    headers: {
+      Cookie: 'obriy_session=test-session',
+      'Content-Type': 'application/json',
+      'Idempotency-Key': 'archive-copy-http-1',
+    },
+    body: JSON.stringify({ version: '3', confirmArchive: true }),
+  });
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(received, {
+    copyId: '12',
+    input: { version: '3', confirmArchive: true },
+    actor,
+    requestKey: 'archive-copy-http-1',
+  });
+});
+
+test('librarian cannot restore, delete, renumber or write off a copy', async () => {
+  const authService = {
+    authenticateToken: async () => ({ id: '2', role: 'librarian' }),
+    login: async () => {},
+    logout: async () => {},
+  };
+  const copyService = {
+    restoreCopy: async () => assert.fail('service must not be called'),
+    deleteUnusedCopy: async () => assert.fail('service must not be called'),
+    correctInventoryNumber: async () => assert.fail('service must not be called'),
+    writeOffCopy: async () => assert.fail('service must not be called'),
+  };
+  const baseUrl = await startTestServer(
+    { query: async () => ({}) },
+    { services: { authService, catalogService: {}, copyService } },
+  );
+  const paths = [
+    ['POST', '/api/v1/copies/12/restore'],
+    ['POST', '/api/v1/copies/12/delete'],
+    ['PATCH', '/api/v1/copies/12/inventory-number'],
+    ['POST', '/api/v1/copies/12/write-off'],
+  ];
+
+  for (const [method, path] of paths) {
+    const response = await fetch(`${baseUrl}${path}`, {
+      method,
+      headers: {
+        Cookie: 'obriy_session=test-session',
+        'Content-Type': 'application/json',
+      },
+      body: '{}',
+    });
+    assert.equal(response.status, 403, path);
+    assert.equal((await response.json()).error.code, 'ACCESS_DENIED', path);
+  }
+});
+
+test('librarian can archive a book but cannot restore or delete it', async () => {
+  const actor = { id: '2', role: 'librarian' };
+  const authService = {
+    authenticateToken: async () => actor,
+    login: async () => {},
+    logout: async () => {},
+  };
+  const catalogService = {
+    archiveBook: async (bookId) => ({ id: bookId, isArchived: true }),
+    restoreBook: async () => assert.fail('service must not be called'),
+    deleteUnusedBook: async () => assert.fail('service must not be called'),
+  };
+  const baseUrl = await startTestServer(
+    { query: async () => ({}) },
+    { services: { authService, catalogService, copyService: {} } },
+  );
+
+  const archive = await fetch(`${baseUrl}/api/v1/books/8/archive`, {
+    method: 'POST',
+    headers: {
+      Cookie: 'obriy_session=test-session',
+      'Content-Type': 'application/json',
+      'Idempotency-Key': 'archive-book-http-1',
+    },
+    body: JSON.stringify({ version: '1', confirmArchive: true }),
+  });
+  assert.equal(archive.status, 200);
+
+  for (const path of ['/api/v1/books/8/restore', '/api/v1/books/8/delete']) {
+    const response = await fetch(`${baseUrl}${path}`, {
+      method: 'POST',
+      headers: {
+        Cookie: 'obriy_session=test-session',
+        'Content-Type': 'application/json',
+      },
+      body: '{}',
+    });
+    assert.equal(response.status, 403, path);
+    assert.equal((await response.json()).error.code, 'ACCESS_DENIED', path);
+  }
+});

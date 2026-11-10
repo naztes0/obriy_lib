@@ -1,6 +1,6 @@
 import { readJsonBody } from '../../http/request-body.js';
 import { sendData } from '../../http/response.js';
-import { requireAuthentication } from '../auth/auth-guard.js';
+import { requireAuthentication, requireRole } from '../auth/auth-guard.js';
 
 export function registerCopyRoutes(router, { authService, copyService }) {
   router.post(
@@ -49,5 +49,86 @@ export function registerCopyRoutes(router, { authService, copyService }) {
       const result = await copyService.listHistory(params.copyId, searchParams);
       sendData(response, 200, result.data, requestId, result.meta);
     }),
+  );
+
+  router.post(
+    '/api/v1/copies/:copyId/archive',
+    requireAuthentication(authService, async ({ request, response, requestId, params, actor }) => {
+      const copy = await copyService.archiveCopy(
+        params.copyId,
+        await readJsonBody(request),
+        actor,
+        request.headers['idempotency-key'],
+      );
+      sendData(response, 200, copy, requestId);
+    }),
+  );
+
+  router.post(
+    '/api/v1/copies/:copyId/restore',
+    requireRole(
+      authService,
+      ['manager'],
+      async ({ request, response, requestId, params, actor }) => {
+        const copy = await copyService.restoreCopy(
+          params.copyId,
+          await readJsonBody(request),
+          actor,
+          request.headers['idempotency-key'],
+        );
+        sendData(response, 200, copy, requestId);
+      },
+    ),
+  );
+
+  router.post(
+    '/api/v1/copies/:copyId/delete',
+    requireRole(
+      authService,
+      ['manager'],
+      async ({ request, response, requestId, params, actor }) => {
+        const result = await copyService.deleteUnusedCopy(
+          params.copyId,
+          await readJsonBody(request),
+          actor,
+          request.headers['idempotency-key'],
+        );
+        sendData(response, 200, result, requestId);
+      },
+    ),
+  );
+
+  router.patch(
+    '/api/v1/copies/:copyId/inventory-number',
+    requireRole(
+      authService,
+      ['manager'],
+      async ({ request, response, requestId, params, actor }) => {
+        const copy = await copyService.correctInventoryNumber(
+          params.copyId,
+          await readJsonBody(request),
+          actor,
+          request.headers['idempotency-key'],
+        );
+        sendData(response, 200, copy, requestId);
+      },
+    ),
+  );
+
+  router.post(
+    '/api/v1/copies/:copyId/write-off',
+    requireRole(
+      authService,
+      ['manager'],
+      async ({ request, response, requestId, params, actor }) => {
+        const result = await copyService.writeOffCopy(
+          params.copyId,
+          await readJsonBody(request),
+          actor,
+          request.headers['idempotency-key'],
+        );
+        sendData(response, 200, result, requestId);
+      },
+    ),
   );
 }

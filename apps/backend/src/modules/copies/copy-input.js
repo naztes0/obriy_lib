@@ -64,6 +64,24 @@ function readVersion(value, errors) {
   return normalized;
 }
 
+function readConfirmation(input, field, message, errors) {
+  if (input[field] !== true) errors[field] = message;
+}
+
+function readOptionalReason(value, errors) {
+  if (value === undefined || value === null || value === '') return null;
+  if (typeof value !== 'string') {
+    errors.reason = 'Передайте текст причини або null.';
+    return undefined;
+  }
+  const result = cleanText(value);
+  if (!result || result.length > 500) {
+    errors.reason = 'Причина має містити від 1 до 500 символів.';
+    return undefined;
+  }
+  return result;
+}
+
 export function validateCopyCreate(input) {
   requireObject(input);
   const errors = {};
@@ -120,4 +138,83 @@ export function validateCopyIdempotencyKey(value) {
     );
   }
   return value.trim();
+}
+
+export function validateCopyArchive(input) {
+  requireObject(input);
+  const errors = {};
+  const version = readVersion(input.version, errors);
+  const reason = readOptionalReason(input.reason, errors);
+  readConfirmation(
+    input,
+    'confirmArchive',
+    'Підтвердьте архівацію примірника.',
+    errors,
+  );
+  if (Object.keys(errors).length) throwValidation(errors);
+  return { version, reason };
+}
+
+export function validateCopyRestore(input) {
+  requireObject(input);
+  const errors = {};
+  const version = readVersion(input.version, errors);
+  readConfirmation(
+    input,
+    'confirmRestore',
+    'Підтвердьте відновлення примірника.',
+    errors,
+  );
+  if (Object.keys(errors).length) throwValidation(errors);
+  return { version };
+}
+
+export function validateCopyDelete(input) {
+  requireObject(input);
+  const errors = {};
+  const version = readVersion(input.version, errors);
+  readConfirmation(
+    input,
+    'confirmDelete',
+    'Підтвердьте незворотне видалення невикористаного примірника.',
+    errors,
+  );
+  if (Object.keys(errors).length) throwValidation(errors);
+  return { version };
+}
+
+export function validateInventoryNumberCorrection(input) {
+  requireObject(input);
+  const errors = {};
+  const version = readVersion(input.version, errors);
+  const inventoryNumber =
+    typeof input.inventoryNumber === 'string' ? cleanText(input.inventoryNumber) : '';
+  if (!INVENTORY_NUMBER_PATTERN.test(inventoryNumber)) {
+    errors.inventoryNumber =
+      'Вкажіть 1–32 українські або латинські літери, цифри, дефіс чи косу риску.';
+  }
+  const reason = readReason(input.reason, errors);
+  readConfirmation(
+    input,
+    'confirmNumberChange',
+    'Підтвердьте, що новий інвентарний номер перевірено.',
+    errors,
+  );
+  if (Object.keys(errors).length) throwValidation(errors);
+  return { version, inventoryNumber, reason };
+}
+
+export function validateCopyWriteOff(input) {
+  requireObject(input);
+  const errors = {};
+  const version = readVersion(input.version, errors);
+  const reason = readReason(input.reason, errors);
+  readConfirmation(
+    input,
+    'confirmReportImpact',
+    'Підтвердьте, що історія примірника зникне, а підсумки звітів зміняться.',
+    errors,
+  );
+  if (Object.keys(errors).length) throwValidation(errors);
+  return { version, reason };
 }

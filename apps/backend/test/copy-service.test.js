@@ -164,3 +164,105 @@ test('copy history is paginated after checking that the copy exists', async () =
     totalPages: 2,
   });
 });
+
+test('librarian archives a copy after explicit confirmation', async () => {
+  let received;
+  const service = new CopyService({
+    archiveCopy: async (copyId, input) => {
+      received = { copyId, ...input };
+      return { status: 'archived', copyId };
+    },
+    findCopyById: async () => ({ id: '5', isArchived: true, version: '3' }),
+  });
+
+  const result = await service.archiveCopy(
+    '5',
+    { version: '2', reason: ' Не використовується ', confirmArchive: true },
+    actor,
+    'archive-copy-5',
+  );
+
+  assert.deepEqual(received, {
+    copyId: '5',
+    version: '2',
+    reason: 'Не використовується',
+    actorId: '7',
+    requestKey: 'archive-copy-5',
+  });
+  assert.equal(result.isArchived, true);
+});
+
+test('copy cannot be restored while its book is archived', async () => {
+  const service = new CopyService({ restoreCopy: async () => ({ status: 'book_archived' }) });
+
+  await assert.rejects(
+    service.restoreCopy(
+      '5',
+      { version: '2', confirmRestore: true },
+      { id: '1', role: 'manager' },
+      'restore-copy-5',
+    ),
+    (error) => error.code === 'BOOK_ARCHIVED' && error.status === 422,
+  );
+});
+
+test('inventory number correction requires confirmation and records the reason', async () => {
+  let received;
+  const service = new CopyService({
+    correctInventoryNumber: async (copyId, input) => {
+      received = { copyId, ...input };
+      return { status: 'corrected', copyId };
+    },
+    findCopyById: async () => ({ id: '5', inventoryNumber: 'INV-NEW', version: '4' }),
+  });
+
+  const result = await service.correctInventoryNumber(
+    '5',
+    {
+      version: '3',
+      inventoryNumber: ' INV-NEW ',
+      reason: ' Помилка маркування ',
+      confirmNumberChange: true,
+    },
+    { id: '1', role: 'manager' },
+    'correct-copy-number-5',
+  );
+
+  assert.equal(received.inventoryNumber, 'INV-NEW');
+  assert.equal(received.reason, 'Помилка маркування');
+  assert.equal(result.inventoryNumber, 'INV-NEW');
+});
+
+test('unused copy deletion rejects any loan history', async () => {
+  const service = new CopyService({ deleteUnusedCopy: async () => ({ status: 'has_loans' }) });
+
+  await assert.rejects(
+    service.deleteUnusedCopy(
+      '5',
+      { version: '2', confirmDelete: true },
+      { id: '1', role: 'manager' },
+      'delete-copy-5',
+    ),
+    (error) => error.code === 'COPY_HAS_LOAN_HISTORY' && error.status === 422,
+  );
+});
+
+test('final write-off reports that copy history and report rows were deleted', async () => {
+  const service = new CopyService({
+    writeOffCopy: async (copyId) => ({ status: 'written_off', copyId }),
+  });
+
+  const result = await service.writeOffCopy(
+    '5',
+    { version: '4', reason: 'Фізичне списання', confirmReportImpact: true },
+    { id: '1', role: 'manager' },
+    'write-off-copy-5',
+  );
+
+  assert.deepEqual(result, {
+    id: '5',
+    writtenOff: true,
+    historyDeleted: true,
+    reportsChanged: true,
+  });
+});

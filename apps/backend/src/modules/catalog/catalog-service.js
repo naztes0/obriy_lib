@@ -3,7 +3,11 @@ import { readPagination } from '../../http/pagination.js';
 import {
   normalizeComparableText,
   normalizeIsbn,
+  validateBookArchive,
   validateBookCreate,
+  validateBookDelete,
+  validateBookIdempotencyKey,
+  validateBookRestore,
   validateBookUpdate,
 } from './book-input.js';
 
@@ -177,6 +181,88 @@ export class CatalogService {
         );
       }
       throw error;
+    }
+  }
+
+  async archiveBook(bookId, input, actor, idempotencyKey) {
+    this.validateBookId(bookId);
+    const values = validateBookArchive(input);
+    const requestKey = validateBookIdempotencyKey(idempotencyKey);
+    const result = await this.repository.archiveBook(bookId, {
+      ...values,
+      actorId: actor.id,
+      requestKey,
+    });
+    this.assertLifecycleResult(result, {
+      already_archived: [422, 'BOOK_ALREADY_ARCHIVED', 'Видання вже перебуває в архіві.'],
+      open_loans: [
+        422,
+        'BOOK_HAS_OPEN_LOANS',
+        'Видання не можна архівувати, доки хоча б один примірник має незавершену видачу.',
+      ],
+    });
+    return await this.getBook(result.bookId);
+  }
+
+  async restoreBook(bookId, input, actor, idempotencyKey) {
+    this.validateBookId(bookId);
+    const values = validateBookRestore(input);
+    const requestKey = validateBookIdempotencyKey(idempotencyKey);
+    const result = await this.repository.restoreBook(bookId, {
+      ...values,
+      actorId: actor.id,
+      requestKey,
+    });
+    this.assertLifecycleResult(result, {
+      not_archived: [422, 'BOOK_NOT_ARCHIVED', 'Видання не перебуває в архіві.'],
+    });
+    return await this.getBook(result.bookId);
+  }
+
+  async deleteUnusedBook(bookId, input, actor, idempotencyKey) {
+    this.validateBookId(bookId);
+    const values = validateBookDelete(input);
+    const requestKey = validateBookIdempotencyKey(idempotencyKey);
+    const result = await this.repository.deleteUnusedBook(bookId, {
+      ...values,
+      actorId: actor.id,
+      requestKey,
+    });
+    this.assertLifecycleResult(result, {
+      has_copies: [
+        422,
+        'BOOK_HAS_COPIES',
+        'Спочатку опрацюйте всі примірники цього видання.',
+      ],
+      has_history: [
+        422,
+        'BOOK_HAS_HISTORY',
+        'Видання має історію. Його можна архівувати, але не фізично видалити.',
+      ],
+    });
+    return { id: result.bookId, deleted: true };
+  }
+
+  validateBookId(bookId) {
+    if (!/^[1-9][0-9]*$/.test(bookId)) {
+      throw new AppError(400, 'INVALID_BOOK_ID', 'Некоректний ідентифікатор видання.');
+    }
+  }
+
+  assertLifecycleResult(result, errors) {
+    if (result.status === 'not_found') {
+      throw new AppError(404, 'BOOK_NOT_FOUND', 'Видання не знайдено.');
+    }
+    if (result.status === 'version_conflict') {
+      throw new AppError(
+        409,
+        'VERSION_CONFLICT',
+        'Видання вже змінилося. Оновіть дані та повторіть дію.',
+      );
+    }
+    if (errors[result.status]) {
+      const [status, code, message] = errors[result.status];
+      throw new AppError(status, code, message);
     }
   }
 }
