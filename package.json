@@ -9,6 +9,8 @@
     "db:bootstrap": "pnpm --filter @obriy/backend db:bootstrap",
     "db:import:validate": "pnpm --filter @obriy/backend db:import:validate",
     "db:import": "pnpm --filter @obriy/backend db:import",
-    "test": "pnpm --filter @obriy/backend test"
+    "test": "pnpm --filter @obriy/backend test",
+    "dev:frontend": "pnpm --filter @obriy/frontend dev",
+    "build:frontend": "pnpm --filter @obriy/frontend build"
   }
 }
