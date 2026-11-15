@@ -119,3 +119,24 @@ test('missing required file and incorrect headers are reported', async () => {
     return true;
   });
 });
+
+test('electronic ticket import requires the unified six-digit number', async () => {
+  const definitions = Object.fromEntries(importFileDefinitions.map((value) => [value.name, value]));
+  const directory = await createPackage({
+    'readers.csv': csv(definitions['readers.csv'].headers, [
+      [
+        'READER-1', 'Учень', 'student', '10-А', '+380501112233', '',
+        'E-42', 'electronic', '2026-09-01', '2027-06-30', '', '', '',
+      ],
+    ]),
+  });
+
+  await assert.rejects(loadImportPackage(directory), (error) => {
+    assert.ok(
+      error.errors.some(
+        (item) => item.field === 'ticket_number' && item.message.includes('E-000000'),
+      ),
+    );
+    return true;
+  });
+});

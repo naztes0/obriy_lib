@@ -95,7 +95,7 @@ async function generateTicketNumber(client) {
     const sequence = await client.query(
       "SELECT nextval('electronic_ticket_number_seq')::text AS value",
     );
-    const candidate = `E-${sequence.rows[0].value}`;
+    const candidate = `E-${sequence.rows[0].value.padStart(6, '0')}`;
     const exists = await client.query(
       'SELECT 1 FROM reader_personal_data WHERE upper(ticket_number) = upper($1)',
       [candidate],

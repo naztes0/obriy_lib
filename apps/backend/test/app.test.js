@@ -420,7 +420,7 @@ test('electronic reader ticket route returns a downloadable PDF', async () => {
   const readerService = {
     getElectronicTicketPdf: async (readerId) => {
       assert.equal(readerId, '12');
-      return { buffer: Buffer.from('%PDF-test'), filename: 'electronic-ticket-E-12.pdf' };
+      return { buffer: Buffer.from('%PDF-test'), filename: 'electronic-ticket-E-000012.pdf' };
     },
   };
   const baseUrl = await startTestServer(
@@ -444,7 +444,7 @@ test('electronic reader ticket route returns a downloadable PDF', async () => {
   assert.equal(response.headers.get('content-type'), 'application/pdf');
   assert.equal(
     response.headers.get('content-disposition'),
-    'attachment; filename="electronic-ticket-E-12.pdf"',
+    'attachment; filename="electronic-ticket-E-000012.pdf"',
   );
   assert.equal(Buffer.from(await response.arrayBuffer()).toString(), '%PDF-test');
 });
