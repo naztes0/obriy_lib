@@ -56,7 +56,7 @@ test('electronic ticket PDF reuses the stored ticket data', async () => {
     fullName: 'Іваненко Іван Іванович',
     category: 'student',
     className: '11-А',
-    ticketNumber: 'E-42',
+    ticketNumber: 'E-000042',
     ticketType: 'electronic',
     ticketIssuedOn: '2026-11-10',
     ticketExpiresOn: '2027-06-30',
@@ -76,7 +76,7 @@ test('electronic ticket PDF reuses the stored ticket data', async () => {
   const result = await service.getElectronicTicketPdf('10');
 
   assert.equal(received, ticket);
-  assert.equal(result.filename, 'electronic-ticket-E-42.pdf');
+  assert.equal(result.filename, 'electronic-ticket-E-000042.pdf');
   assert.equal(result.buffer.toString(), '%PDF-test');
 });
 
@@ -235,6 +235,23 @@ test('manager must confirm a ticket number change and provide a reason', async (
       manager,
     ),
     (error) => error.code === 'VALIDATION_ERROR' && Boolean(error.details.fields.reason),
+  );
+});
+
+test('electronic ticket correction keeps the unified six-digit format', async () => {
+  const service = new ReaderService({
+    findById: async () =>
+      reader({ ticketType: 'electronic', ticketNumber: 'E-000010', ticketIssuedOn: '2026-11-10' }),
+  });
+
+  await assert.rejects(
+    service.updateReader(
+      '10',
+      { ticketNumber: 'E-10', confirmTicketNumberChange: true, reason: 'Виправлення' },
+      manager,
+    ),
+    (error) =>
+      error.code === 'VALIDATION_ERROR' && Boolean(error.details.fields.ticketNumber),
   );
 });
 

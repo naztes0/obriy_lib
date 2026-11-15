@@ -6,7 +6,7 @@ test('electronic reader ticket is generated as a PDF document', async () => {
   const buffer = await generateReaderTicketPdf({
     fullName: 'Іваненко Іван Іванович',
     className: '11-А',
-    ticketNumber: 'E-42',
+    ticketNumber: 'E-000042',
     ticketIssuedOn: '2026-11-10',
     ticketExpiresOn: '2027-06-30',
   });

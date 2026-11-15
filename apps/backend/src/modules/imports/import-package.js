@@ -378,6 +378,16 @@ function normalizeReaders(records, errors) {
       }
     }
     if (record.ticket_type === 'electronic') {
+      if (record.ticket_number && !/^E-[0-9]{6}$/.test(record.ticket_number)) {
+        errors.push(
+          issue(
+            record._file,
+            record._row,
+            'ticket_number',
+            'Номер електронного квитка має формат E-000000.',
+          ),
+        );
+      }
       if (record.category !== 'student' || !record.ticket_issued_on) {
         errors.push(
           issue(

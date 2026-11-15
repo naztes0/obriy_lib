@@ -1,6 +1,7 @@
 import { AppError } from '../../http/app-error.js';
 
 const TICKET_PATTERN = /^[A-Za-zА-Яа-яІіЇїЄєҐґ0-9/-]{1,32}$/u;
+const ELECTRONIC_TICKET_PATTERN = /^E-[0-9]{6}$/;
 const PHONE_PATTERN = /^\+380[0-9]{9}$/;
 const CATEGORIES = new Set(['student', 'employee']);
 const TICKET_TYPES = new Set(['existing', 'electronic']);
@@ -131,9 +132,8 @@ function validateValues(values, { creating }) {
       errors.ticketNumber = 'Номер електронного квитка генерується автоматично.';
     } else if (!creating) {
       const ticketNumber = typeof values.ticketNumber === 'string' ? values.ticketNumber.trim() : '';
-      if (!TICKET_PATTERN.test(ticketNumber)) {
-        errors.ticketNumber =
-          'Вкажіть 1–32 українські або латинські літери, цифри, дефіс чи косу риску.';
+      if (!ELECTRONIC_TICKET_PATTERN.test(ticketNumber)) {
+        errors.ticketNumber = 'Номер електронного квитка має формат E-000000.';
       } else {
         result.ticketNumber = ticketNumber;
       }
