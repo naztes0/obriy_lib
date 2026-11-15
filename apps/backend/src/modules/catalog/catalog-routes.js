@@ -71,7 +71,7 @@ export function registerCatalogRoutes(router, { authService, catalogService }) {
     '/api/v1/books/:bookId/delete',
     requireRole(
       authService,
-      ['manager'],
+      ['manager', 'librarian'],
       async ({ request, response, requestId, params, actor }) => {
         const result = await catalogService.deleteUnusedBook(
           params.bookId,

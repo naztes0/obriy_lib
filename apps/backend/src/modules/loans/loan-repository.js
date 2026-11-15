@@ -19,6 +19,7 @@ function mapLoan(row) {
     book: { id: String(row.book_id), title: row.title },
     copy: { id: String(row.copy_id), inventoryNumber: row.inventory_number },
     issuedAt: row.issued_at,
+    issuedBy: row.issued_by == null ? null : { id: String(row.issued_by), displayName: row.issued_by_name },
     initialDueDate: toDateOnly(row.initial_due_date),
     currentDueDate: toDateOnly(row.current_due_date),
     returnedAt: row.returned_at,
@@ -78,12 +79,13 @@ export class LoanRepository {
               le.old_due_date AS extension_old_due_date,
               le.new_due_date AS extension_new_due_date,
               le.reason AS extension_reason,
-              le.occurred_at AS extension_occurred_at
+              le.occurred_at AS extension_occurred_at, issuer.display_name AS issued_by_name
        FROM loans l
        LEFT JOIN reader_personal_data rpd ON rpd.reader_id = l.reader_id
        JOIN book_copies bc ON bc.id = l.copy_id
        JOIN books b ON b.id = bc.book_id
        LEFT JOIN loan_extensions le ON le.loan_id = l.id
+       LEFT JOIN staff_accounts issuer ON issuer.id = l.issued_by
        WHERE l.id = $1`,
       [loanId],
     );
@@ -107,7 +109,7 @@ export class LoanRepository {
     };
   }
 
-  async issueLoan({ readerId, copyId, issueDate, defaultDueDate, requestedDueDate, actorId, requestKey }) {
+  async issueLoan({ readerId, copyId, readerVersion, copyVersion, issueDate, defaultDueDate, dueDate: requestedDueDate, actorId, requestKey }) {
     const client = await this.pool.connect();
     const operation = 'issue_loan';
     try {
@@ -119,7 +121,7 @@ export class LoanRepository {
       }
 
       const reader = await client.query(
-        `SELECT rpd.reader_id, rpd.category, rpd.ticket_expires_on, rpd.employment_ended_on,
+        `SELECT rpd.reader_id, rpd.version, rpd.category, rpd.ticket_expires_on, rpd.employment_ended_on,
                 rpd.archived_at, sc.name AS class_name
          FROM reader_personal_data rpd
          LEFT JOIN school_classes sc ON sc.id = rpd.class_id
@@ -129,6 +131,7 @@ export class LoanRepository {
       );
       if (!reader.rowCount) return await this.rollbackStatus(client, 'reader_not_found');
       const readerRow = reader.rows[0];
+      if (readerVersion !== undefined && String(readerRow.version) !== readerVersion) return await this.rollbackStatus(client, 'state_changed');
       if (readerRow.archived_at !== null) return await this.rollbackStatus(client, 'reader_archived');
       const ticketExpiresOn = toDateOnly(readerRow.ticket_expires_on);
       if (readerRow.category === 'student' && ticketExpiresOn < issueDate) {
@@ -150,7 +153,7 @@ export class LoanRepository {
       if (activeBlock.rowCount) return await this.rollbackStatus(client, 'reader_blocked');
 
       const copy = await client.query(
-        `SELECT bc.id, bc.condition, bc.defect_description, bc.is_temporarily_unavailable,
+        `SELECT bc.id, bc.version, bc.condition, bc.defect_description, bc.is_temporarily_unavailable,
                 bc.is_lost, bc.archived_at, b.id AS book_id, b.archived_at AS book_archived_at,
                 b.is_textbook
          FROM book_copies bc JOIN books b ON b.id = bc.book_id
@@ -159,6 +162,7 @@ export class LoanRepository {
       );
       if (!copy.rowCount) return await this.rollbackStatus(client, 'copy_not_found');
       const copyRow = copy.rows[0];
+      if (copyVersion !== undefined && String(copyRow.version) !== copyVersion) return await this.rollbackStatus(client, 'state_changed');
       if (copyRow.book_archived_at !== null) return await this.rollbackStatus(client, 'book_archived');
       if (copyRow.archived_at !== null) return await this.rollbackStatus(client, 'copy_archived');
       if (copyRow.is_lost) return await this.rollbackStatus(client, 'copy_lost');
@@ -396,6 +400,9 @@ export class LoanRepository {
         `UPDATE loans SET current_due_date = $2, version = version + 1 WHERE id = $1`,
         [loanId, newDueDate],
       );
+      await client.query(`INSERT INTO book_copy_events(copy_id,kind,old_value,new_value,reason,actor_id,loan_id,request_key)
+        SELECT copy_id,'extended',$2,$3,$4,$5,id,$6 FROM loans WHERE id=$1`,
+        [loanId,JSON.stringify({currentDueDate:oldDueDate}),JSON.stringify({currentDueDate:newDueDate}),reason,actorId,requestKey]);
       await completeRequest(client, { actorId, operation, requestKey, resultId: loanId });
       await client.query('COMMIT');
       return { status: 'extended', loanId };

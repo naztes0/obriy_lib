@@ -45,7 +45,7 @@ export default function ChangeBookModal({ copy, currentBookId, onClose, onDone }
         </Field>
         {book && <p className="alert alert--info">Обрано: <strong>{book.title}</strong></p>}
         <Field label="Причина" required error={error?.fields?.reason}>
-          {(id) => <input id={id} value={reason} onChange={(e) => setReason(e.target.value)} />}
+          {(id) => <input id={id} required minLength={3} maxLength={500} value={reason} onChange={(e) => setReason(e.target.value)} />}
         </Field>
         <label className="check">
           <input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} />

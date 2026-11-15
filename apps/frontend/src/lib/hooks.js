@@ -23,7 +23,9 @@ export function useAsync(loader, deps) {
 
   useEffect(() => {
     run();
+    window.addEventListener('data:refresh', run);
     return () => {
+      window.removeEventListener('data:refresh', run);
       counter.current += 1;
     };
   }, [run]);
@@ -36,6 +38,7 @@ export function useSubmit(action) {
   const [error, setError] = useState(null);
   const keyRef = useRef(newIdempotencyKey());
   const busyRef = useRef(false);
+
 
   const submit = useCallback(
     async (...args) => {

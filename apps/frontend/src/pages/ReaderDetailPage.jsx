@@ -1,5 +1,7 @@
+import ReaderHistory from '../components/ReaderHistory.jsx';
 import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import { Archive, FileDown, Pencil, RotateCcw, TicketCheck } from 'lucide-react';
 import api from '../api/client.js';
 import { useAuth } from '../auth/AuthContext.jsx';
 import ActionModal from '../components/ActionModal.jsx';
@@ -9,6 +11,7 @@ import { CATEGORY, formatDate, formatDateTime } from '../lib/format.js';
 import { useAsync } from '../lib/hooks.js';
 import ReaderBlocks from './ReaderBlocks.jsx';
 import ReaderFormModal from './ReaderFormModal.jsx';
+import TicketCorrectionModal from '../components/TicketCorrectionModal.jsx';
 
 function LoanTable({ loans, onChanged, withActions }) {
   if (!loans.length) return <p className="row-muted">Записів немає.</p>;
@@ -18,7 +21,7 @@ function LoanTable({ loans, onChanged, withActions }) {
       <tbody>
         {loans.map((l) => (
           <tr key={l.id}>
-            <td>{l.book.title}<div className="field__hint">інв. № {l.copy.inventoryNumber}</div></td>
+            <td><Link to={`/loans/${l.id}`}>{l.book.title} · №{l.id}</Link><div className="field__hint">інв. № {l.copy.inventoryNumber}</div></td>
             <td className="nowrap">{formatDateTime(l.issuedAt)}</td>
             <td className="nowrap">
               {formatDate(l.currentDueDate)}
@@ -52,16 +55,19 @@ export default function ReaderDetailPage() {
       <div className="crumbs"><Link to="/readers">← Читачі</Link></div>
       <PageHeader
         title={reader.fullName}
+        eyebrow="Читачі / Картка читача"
+        subtitle={`${CATEGORY[reader.category]}${reader.schoolClass ? ` · ${reader.schoolClass.name}` : ''} · квиток ${reader.ticketNumber}`}
         actions={
           <>
             {reader.ticketType === 'electronic' && (
-              <a className="btn" href={`/api/v1/readers/${reader.id}/ticket.pdf`} target="_blank" rel="noreferrer">Квиток (PDF)</a>
+              <a className="btn" href={`/api/v1/readers/${reader.id}/ticket.pdf`} target="_blank" rel="noreferrer"><FileDown size={16} />Квиток PDF</a>
             )}
-            <Button onClick={() => setModal('edit')} disabled={reader.isArchived}>Редагувати</Button>
+            <Button onClick={() => setModal('edit')} disabled={reader.isArchived}><Pencil size={16} />Редагувати</Button>
+            {isManager && <Button onClick={() => setModal('ticket')}><TicketCheck size={16} />Виправити номер</Button>}
             {reader.isArchived ? (
-              isManager && <Button onClick={() => setModal('restore')}>Відновити</Button>
+              isManager && <Button onClick={() => setModal('restore')}><RotateCcw size={16} />Відновити</Button>
             ) : (
-              <Button variant="danger" onClick={() => setModal('archive')}>В архів</Button>
+              <Button variant="danger" onClick={() => setModal('archive')}><Archive size={16} />В архів</Button>
             )}
           </>
         }
@@ -71,30 +77,32 @@ export default function ReaderDetailPage() {
       {reader.isBlocked && <Notice kind="error">Читач заблокований: нові видачі та продовження заборонені. Повернення доступне.</Notice>}
       {reader.isArchived && <Notice kind="warn">Картка в архіві{reader.archiveReason ? `: ${reader.archiveReason}` : ''}. Нові видачі заборонені, повернення доступне.</Notice>}
 
-      <div className="card">
-        <dl className="kv">
-          <dt>Квиток</dt><dd>{reader.ticketNumber} <Badge>{reader.ticketType === 'electronic' ? 'електронний' : 'наявний'}</Badge></dd>
-          <dt>Категорія</dt><dd>{CATEGORY[reader.category]}{reader.schoolClass ? `, ${reader.schoolClass.name}` : ''}</dd>
-          <dt>Квиток чинний до</dt><dd>{formatDate(reader.ticketExpiresOn)}</dd>
-          <dt>Телефон</dt><dd>{reader.phone}</dd>
-          <dt>Адреса</dt><dd>{reader.address ?? '—'}</dd>
-        </dl>
+      <div className="profile-overview">
+        <div className="profile-overview__avatar">{reader.fullName.split(/\s+/u).slice(0, 2).map((part) => part[0]).join('').toUpperCase()}</div>
+        <div className="profile-fact"><span>Телефон</span><strong>{reader.phone}</strong></div>
+        <div className="profile-fact"><span>Квиток чинний до</span><strong>{formatDate(reader.ticketExpiresOn)}</strong></div>
+        <div className="profile-fact"><span>Поточні видачі</span><strong>{reader.currentLoans.length} {reader.currentLoans.length === 1 ? 'книга' : 'книги'}</strong></div>
+        <div className="profile-fact"><span>Адреса</span><strong>{reader.address ?? 'Не вказано'}</strong></div>
       </div>
 
-      <h2>Поточні видачі</h2>
-      <LoanTable loans={reader.currentLoans} withActions onChanged={(m) => { setFlash(m); reload(); }} />
+      <div className="detail-sections">
+        <section className="section-panel">
+          <div className="section-panel__head"><div><span>Видачі</span><h2>Книги на руках</h2></div><Badge kind={reader.currentLoans.length ? 'info' : 'neutral'}>{reader.currentLoans.length}</Badge></div>
+          <LoanTable loans={reader.currentLoans} withActions onChanged={(m) => { setFlash(m); reload(); }} />
+        </section>
 
-      <h2 style={{ marginTop: 24 }}>Історія видач</h2>
-      <LoanTable loans={reader.loanHistory} />
-      {reader.loanHistoryTotal > reader.loanHistory.length && (
-        <p className="field__hint">Показано {reader.loanHistory.length} з {reader.loanHistoryTotal} останніх видач.</p>
-      )}
+        <section className="section-panel">
+          <div className="section-panel__head"><div><span>Хронологія</span><h2>Історія видач</h2></div></div>
+          <ReaderHistory readerId={reader.id} />
+        </section>
 
-      <div style={{ marginTop: 24 }}>
-        <ReaderBlocks readerId={reader.id} currentLoans={reader.currentLoans} onChanged={reload} />
+        <div className="blocks-panel">
+          <ReaderBlocks readerId={reader.id} currentLoans={reader.currentLoans} onChanged={reload} />
+        </div>
       </div>
 
       {modal === 'edit' && <ReaderFormModal reader={reader} onClose={close} onSaved={done('Зміни збережено.')} />}
+      {modal === 'ticket' && <TicketCorrectionModal reader={reader} onClose={close} onDone={done('Номер квитка виправлено.')} />}
       {modal === 'archive' && (
         <ActionModal title="Архівувати картку" danger submitLabel="Архівувати" label="Причина архівації"
           description="Нові видачі та продовження будуть заборонені; повернення та відшкодування залишаться доступними."

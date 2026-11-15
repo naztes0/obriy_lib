@@ -33,6 +33,8 @@ import { StaffService } from './modules/staff/staff-service.js';
 import { TextbookBatchRepository } from './modules/textbook-batches/textbook-batch-repository.js';
 import { registerTextbookBatchRoutes } from './modules/textbook-batches/textbook-batch-routes.js';
 import { TextbookBatchService } from './modules/textbook-batches/textbook-batch-service.js';
+import { registerCorrectionRoutes } from './modules/loans/correction-routes.js';
+import { registerHistoryRoutes } from './modules/readers/history-routes.js';
 
 export function createApp({ pool, config = {}, logger = console, services = {} }) {
   const effectiveConfig = {
@@ -74,8 +76,10 @@ export function createApp({ pool, config = {}, logger = console, services = {} }
   registerCopyRoutes(router, { authService, copyService });
   registerSchoolClassRoutes(router, { authService, schoolClassService });
   registerReaderRoutes(router, { authService, readerService });
-  registerRestrictionRoutes(router, { authService, restrictionService });
+  registerHistoryRoutes(router, { authService, pool });
+  registerRestrictionRoutes(router, { authService, restrictionService, pool });
   registerLoanRoutes(router, { authService, loanService });
+  registerCorrectionRoutes(router, { authService, pool });
   registerTextbookBatchRoutes(router, { authService, textbookBatchService });
   registerReportRoutes(router, { authService, reportService });
   registerStaffRoutes(router, { authService, staffService });

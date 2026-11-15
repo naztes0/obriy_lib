@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import api from '../api/client.js';
+import { setRequestActor } from '../api/pending.js';
 
 const AuthContext = createContext(null);
 
@@ -11,7 +12,7 @@ export function AuthProvider({ children }) {
     let cancelled = false;
     api
       .get('/api/v1/auth/session')
-      .then(({ data }) => !cancelled && setStaff(data.staff))
+      .then(({ data }) => { if (!cancelled) { setRequestActor(data.staff.id); setStaff(data.staff); } })
       .catch(() => !cancelled && setStaff(null))
       .finally(() => !cancelled && setLoading(false));
     return () => {
@@ -20,13 +21,14 @@ export function AuthProvider({ children }) {
   }, []);
 
   useEffect(() => {
-    const onExpired = () => setStaff(null);
+    const onExpired = () => { setRequestActor(null); setStaff(null); };
     window.addEventListener('auth:expired', onExpired);
     return () => window.removeEventListener('auth:expired', onExpired);
   }, []);
 
   const login = useCallback(async (credentials) => {
     const { data } = await api.post('/api/v1/auth/login', credentials);
+    setRequestActor(data.staff.id);
     setStaff(data.staff);
   }, []);
 
@@ -34,6 +36,7 @@ export function AuthProvider({ children }) {
     try {
       await api.post('/api/v1/auth/logout');
     } finally {
+      setRequestActor(null);
       setStaff(null);
     }
   }, []);

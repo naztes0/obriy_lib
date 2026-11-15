@@ -7,6 +7,9 @@ function mapSchoolClass(row) {
 }
 
 export class SchoolClassRepository {
+  async remove(classId) {
+    await this.pool.query('DELETE FROM school_classes WHERE id=$1',[classId]);
+  }
   constructor(pool) {
     this.pool = pool;
   }

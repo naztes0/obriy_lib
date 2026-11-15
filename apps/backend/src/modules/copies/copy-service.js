@@ -1,5 +1,6 @@
 import { AppError } from '../../http/app-error.js';
 import { readPagination } from '../../http/pagination.js';
+import { readReportQuery } from '../reports/report-input.js';
 import {
   validateConditionChange,
   validateCopyArchive,
@@ -119,7 +120,10 @@ export class CopyService {
   async listHistory(copyId, searchParams) {
     await this.getCopy(copyId);
     const pagination = readPagination(searchParams);
-    const result = await this.repository.listHistory(copyId, pagination);
+    const { filters } = readReportQuery('reader-activity', searchParams);
+    const result = await this.repository.listHistory(copyId, { ...pagination,
+      ...(filters.dateFrom ? {dateFrom:filters.dateFrom} : {}), ...(filters.dateTo ? {dateTo:filters.dateTo} : {}),
+    });
     return {
       data: result.events,
       meta: {
@@ -186,6 +190,7 @@ export class CopyService {
         'COPY_HAS_LOAN_HISTORY',
         'Примірник має історію видач. Використайте архівацію або остаточне списання.',
       ],
+      has_history: [422,'COPY_HAS_HISTORY','Примірник має історію операцій. Використайте архівацію або списання завідувачем.'],
       unresolved_loss: [
         422,
         'COPY_HAS_UNRESOLVED_LOSS',

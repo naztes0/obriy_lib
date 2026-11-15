@@ -34,13 +34,13 @@ export default function LoginPage() {
       <ErrorBox error={error} />
       <Field label="Логін" error={error?.fields?.login} required>
         {(id) => (
-          <input id={id} autoComplete="username" autoFocus value={form.login}
+          <input id={id} autoComplete="username" autoCapitalize="none" required minLength={3} maxLength={64} autoFocus value={form.login}
             onChange={(e) => setForm({ ...form, login: e.target.value })} />
         )}
       </Field>
       <Field label="Пароль" error={error?.fields?.password} required>
         {(id) => (
-          <input id={id} type="password" autoComplete="current-password" value={form.password}
+          <input id={id} type="password" autoComplete="current-password" required minLength={1} maxLength={256} value={form.password}
             onChange={(e) => setForm({ ...form, password: e.target.value })} />
         )}
       </Field>

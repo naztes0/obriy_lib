@@ -42,11 +42,11 @@ export default function ConditionModal({ copy, onClose, onDone }) {
         </Field>
         {needsDefect && (
           <Field label="Опис дефектів" required error={fields.defectDescription}>
-            {(id) => <textarea id={id} rows={3} value={defect} onChange={(e) => setDefect(e.target.value)} />}
+            {(id) => <textarea id={id} rows={3} required minLength={3} maxLength={500} value={defect} onChange={(e) => setDefect(e.target.value)} />}
           </Field>
         )}
         <Field label="Причина зміни" required error={fields.reason}>
-          {(id) => <input id={id} value={reason} onChange={(e) => setReason(e.target.value)} />}
+          {(id) => <input id={id} required minLength={3} maxLength={500} value={reason} onChange={(e) => setReason(e.target.value)} />}
         </Field>
         <div className="modal__foot">
           <Button onClick={onClose}>Скасувати</Button>

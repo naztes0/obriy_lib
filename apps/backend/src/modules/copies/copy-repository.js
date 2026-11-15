@@ -418,6 +418,8 @@ export class CopyRepository {
       if (String(row.version) !== version) return await this.rollbackStatus(client, 'version_conflict');
       const loans = await client.query('SELECT 1 FROM loans WHERE copy_id = $1 LIMIT 1', [copyId]);
       if (loans.rowCount) return await this.rollbackStatus(client, 'has_loans');
+      const history = await client.query("SELECT 1 FROM book_copy_events WHERE copy_id=$1 AND kind <> 'created' LIMIT 1",[copyId]);
+      if (history.rowCount) return await this.rollbackStatus(client, 'has_history');
       if (row.is_lost) return await this.rollbackStatus(client, 'unresolved_loss');
 
       await client.query('DELETE FROM book_copies WHERE id = $1', [copyId]);
@@ -516,13 +518,13 @@ export class CopyRepository {
            FROM book_copy_events e
            LEFT JOIN loans l ON l.id = e.loan_id
            WHERE e.copy_id = $1
-             AND e.kind IN ('lost', 'lost_in_fund', 'erroneous_return', 'found', 'returned')
+              AND e.kind IN ('lost', 'lost_in_fund', 'erroneous_return', 'found', 'returned', 'loss_settled')
            ORDER BY e.occurred_at DESC, e.id DESC
            LIMIT 1`,
           [copyId],
         );
         const settled =
-          loss.rowCount && loss.rows[0].kind === 'lost' && loss.rows[0].loan_status === 'compensated';
+          loss.rowCount && (loss.rows[0].kind === 'loss_settled' || (loss.rows[0].kind === 'lost' && loss.rows[0].loan_status === 'compensated'));
         if (!settled) return await this.rollbackStatus(client, 'unresolved_loss');
       }
 
@@ -620,10 +622,12 @@ export class CopyRepository {
     return { status };
   }
 
-  async listHistory(copyId, { pageSize, offset }) {
+  async listHistory(copyId, { pageSize, offset, dateFrom = null, dateTo = null }) {
+    const period = `($2::date IS NULL OR (COALESCE(l.issued_at,e.occurred_at) AT TIME ZONE 'Europe/Kyiv')::date >= $2::date)
+      AND ($3::date IS NULL OR (COALESCE(l.issued_at,e.occurred_at) AT TIME ZONE 'Europe/Kyiv')::date <= $3::date)`;
     const count = await this.pool.query(
-      'SELECT count(*) AS total FROM book_copy_events WHERE copy_id = $1',
-      [copyId],
+      `SELECT count(*) AS total FROM book_copy_events e LEFT JOIN loans l ON l.id=e.loan_id WHERE e.copy_id = $1 AND ${period}`,
+      [copyId,dateFrom,dateTo],
     );
     const result = await this.pool.query(
       `SELECT e.id, e.kind, e.old_value, e.new_value, e.reason, e.occurred_at,
@@ -631,10 +635,11 @@ export class CopyRepository {
               e.loan_id
        FROM book_copy_events e
        LEFT JOIN staff_accounts s ON s.id = e.actor_id
-       WHERE e.copy_id = $1
+       LEFT JOIN loans l ON l.id = e.loan_id
+       WHERE e.copy_id = $1 AND ${period}
        ORDER BY e.occurred_at DESC, e.id DESC
-       LIMIT $2 OFFSET $3`,
-      [copyId, pageSize, offset],
+       LIMIT $4 OFFSET $5`,
+      [copyId,dateFrom,dateTo,pageSize,offset],
     );
     return {
       events: result.rows.map((row) => ({

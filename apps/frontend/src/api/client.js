@@ -1,3 +1,4 @@
+import { rememberRequest, forgetRequest } from './pending.js';
 
 export const REQUEST_TIMEOUT_MS = 10_000;
 
@@ -16,7 +17,7 @@ export class ApiError extends Error {
   }
 
   get isUnconfirmed() {
-    return this.code === 'TIMEOUT' || this.code === 'NETWORK_ERROR';
+    return this.code === 'TIMEOUT' || this.code === 'NETWORK_ERROR' || this.code === 'UNCONFIRMED_RESPONSE' || this.status >= 500 || this.status === 401;
   }
 }
 
@@ -37,6 +38,10 @@ function toQueryString(params) {
 }
 
 export async function request(path, { method = 'GET', query, body, idempotencyKey, signal } = {}) {
+  if (idempotencyKey) {
+    try { rememberRequest({ path, method, body, key: idempotencyKey }); }
+    catch (cause) { throw new ApiError({ status: 409, code: 'PENDING_OPERATION', message: cause.message }); }
+  }
   const controller = new AbortController();
   let timedOut = false;
   const timer = setTimeout(() => {
@@ -59,6 +64,7 @@ export async function request(path, { method = 'GET', query, body, idempotencyKe
       signal: controller.signal,
     });
   } catch (cause) {
+    clearTimeout(timer);
     if (timedOut) {
       throw new ApiError({
         status: 0,
@@ -73,8 +79,6 @@ export async function request(path, { method = 'GET', query, body, idempotencyKe
       code: 'NETWORK_ERROR',
       message: 'Не вдалося зв’язатися із сервером. Оновіть дані та перевірте результат перед повторенням.',
     });
-  } finally {
-    clearTimeout(timer);
   }
 
   let payload = null;
@@ -82,6 +86,8 @@ export async function request(path, { method = 'GET', query, body, idempotencyKe
     payload = await response.json();
   } catch {
     payload = null;
+  } finally {
+    clearTimeout(timer);
   }
 
   if (!response.ok) {
@@ -96,9 +102,12 @@ export async function request(path, { method = 'GET', query, body, idempotencyKe
     if (response.status === 401 && ['AUTHENTICATION_REQUIRED', 'SESSION_EXPIRED'].includes(apiError.code)) {
       window.dispatchEvent(new CustomEvent('auth:expired'));
     }
+    if (idempotencyKey && !apiError.isUnconfirmed) forgetRequest(idempotencyKey);
     throw apiError;
   }
 
+  if (idempotencyKey && (!payload || !Object.hasOwn(payload, 'data'))) throw new ApiError({ status: 0, code: 'UNCONFIRMED_RESPONSE', message: 'Сервер не повернув підтвердження. Перевірте незавершену операцію.' });
+  if (idempotencyKey) forgetRequest(idempotencyKey);
   return { data: payload?.data, meta: payload?.meta };
 }
 

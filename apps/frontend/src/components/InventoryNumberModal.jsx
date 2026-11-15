@@ -26,10 +26,10 @@ export default function InventoryNumberModal({ copy, onClose, onDone }) {
         <p>Поточний номер: <strong>{copy.inventoryNumber}</strong></p>
         <ErrorBox error={error?.code === 'VALIDATION_ERROR' ? null : error} />
         <Field label="Новий номер" required error={f.inventoryNumber} hint="1–32 символи: літери, цифри, дефіс, коса риска. Має бути унікальним серед активних і архівних.">
-          {(id) => <input id={id} value={inventoryNumber} onChange={(e) => setInventoryNumber(e.target.value)} autoFocus />}
+          {(id) => <input id={id} required minLength={1} maxLength={64} value={inventoryNumber} onChange={(e) => setInventoryNumber(e.target.value)} autoFocus />}
         </Field>
         <Field label="Причина виправлення" required error={f.reason}>
-          {(id) => <input id={id} value={reason} onChange={(e) => setReason(e.target.value)} />}
+          {(id) => <input id={id} required minLength={3} maxLength={500} value={reason} onChange={(e) => setReason(e.target.value)} />}
         </Field>
         {changed && (
           <>

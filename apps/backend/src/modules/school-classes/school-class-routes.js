@@ -3,6 +3,10 @@ import { sendData } from '../../http/response.js';
 import { requireAuthentication, requireRole } from '../auth/auth-guard.js';
 
 export function registerSchoolClassRoutes(router, { authService, schoolClassService }) {
+  router.post('/api/v1/school-classes/:classId/delete', requireRole(authService,['manager'],async ({request,response,requestId,params}) => {
+    const result=await schoolClassService.remove(params.classId,await readJsonBody(request));
+    sendData(response,200,result,requestId);
+  }));
   router.get(
     '/api/v1/school-classes',
     requireAuthentication(authService, async ({ response, requestId, searchParams }) => {

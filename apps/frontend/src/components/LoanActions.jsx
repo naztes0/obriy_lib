@@ -61,7 +61,7 @@ function ReturnForm({ loan, onClose, onDone }) {
       </Field>
       {needsDefect && (
         <Field label="Опис дефектів" required error={fields.defectDescription}>
-          {(id) => <textarea id={id} rows={3} value={defect} onChange={(e) => setDefect(e.target.value)} />}
+          {(id) => <textarea id={id} rows={3} required minLength={3} maxLength={500} value={defect} onChange={(e) => setDefect(e.target.value)} />}
         </Field>
       )}
       <Footer onClose={onClose} busy={busy} disabled={needsDefect && !defect.trim()} label="Прийняти повернення" />
@@ -84,10 +84,10 @@ function ExtendForm({ loan, onClose, onDone }) {
       <ErrorBox error={error?.code === 'VALIDATION_ERROR' ? null : error} />
       <Field label="Нова дата повернення" required error={fields.newDueDate}
         hint="Один раз, не більше ніж на 30 днів від поточного строку; до завершення поточного строку.">
-        {(id) => <input id={id} type="date" min={loan.currentDueDate} value={newDueDate} onChange={(e) => setNewDueDate(e.target.value)} />}
+        {(id) => <input id={id} type="date" min={loan.currentDueDate} required value={newDueDate} onChange={(e) => setNewDueDate(e.target.value)} />}
       </Field>
       <Field label="Причина" required error={fields.reason}>
-        {(id) => <input id={id} value={reason} onChange={(e) => setReason(e.target.value)} />}
+        {(id) => <input id={id} required minLength={3} maxLength={500} value={reason} onChange={(e) => setReason(e.target.value)} />}
       </Field>
       <Footer onClose={onClose} busy={busy} disabled={!newDueDate || !reason.trim()} label="Продовжити" />
     </form>
@@ -164,11 +164,11 @@ function CorrectForm({ loan, onClose, onDone }) {
       )}
       {needsDefect && (
         <Field label="Опис дефектів" required error={fields.defectDescription}>
-          {(id) => <textarea id={id} rows={2} value={defect} onChange={(e) => setDefect(e.target.value)} />}
+          {(id) => <textarea id={id} rows={2} required minLength={3} maxLength={500} value={defect} onChange={(e) => setDefect(e.target.value)} />}
         </Field>
       )}
       <Field label="Пояснення виправлення" required error={fields.comment}>
-        {(id) => <textarea id={id} rows={2} maxLength={500} value={comment} onChange={(e) => setComment(e.target.value)} />}
+        {(id) => <textarea id={id} rows={2} required minLength={3} maxLength={500} value={comment} onChange={(e) => setComment(e.target.value)} />}
       </Field>
       <label className="check">
         <input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} />
@@ -198,7 +198,7 @@ function ErroneousReturnForm({ loan, onClose, onDone }) {
       </p>
       <ErrorBox error={error?.code === 'VALIDATION_ERROR' ? null : error} />
       <Field label="Пояснення" required error={error?.fields?.comment}>
-        {(id) => <textarea id={id} rows={3} maxLength={500} value={comment} onChange={(e) => setComment(e.target.value)} />}
+        {(id) => <textarea id={id} rows={3} required minLength={3} maxLength={500} value={comment} onChange={(e) => setComment(e.target.value)} />}
       </Field>
       <label className="check">
         <input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} />

@@ -134,7 +134,7 @@ export class ReaderRepository {
     this.pool = pool;
   }
 
-  async listReaders({ query, archived, pageSize, offset }) {
+  async listReaders({ query, archived, category, classId, pageSize, offset }) {
     const values = [];
     const conditions = [];
     if (query) {
@@ -145,6 +145,14 @@ export class ReaderRepository {
     }
     if (archived === 'active') conditions.push('rpd.archived_at IS NULL');
     if (archived === 'archived') conditions.push('rpd.archived_at IS NOT NULL');
+    if (category) {
+      values.push(category);
+      conditions.push(`rpd.category = $${values.length}`);
+    }
+    if (classId) {
+      values.push(classId);
+      conditions.push(`rpd.class_id = $${values.length}`);
+    }
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
 
     const count = await this.pool.query(
@@ -287,7 +295,7 @@ export class ReaderRepository {
     }
   }
 
-  async updateReader(readerId, reader, { actorId, reason, expectedTicketNumber }) {
+  async updateReader(readerId, reader, { actorId, reason, expectedTicketNumber, expectedVersion }) {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
@@ -298,6 +306,10 @@ export class ReaderRepository {
       if (!current.rowCount) {
         await client.query('ROLLBACK');
         return { status: 'not_found' };
+      }
+      if (expectedVersion !== undefined && String(current.rows[0].version) !== String(expectedVersion)) {
+        await client.query('ROLLBACK');
+        return { status: 'version_conflict' };
       }
       if (current.rows[0].ticket_number !== expectedTicketNumber) {
         await client.query('ROLLBACK');

@@ -1,62 +1,25 @@
+import { Link } from 'react-router-dom';
+import { EVENT_KIND, eventValue } from '../lib/history.js';
 import { useState } from 'react';
 import api from '../api/client.js';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { useAsync } from '../lib/hooks.js';
 import { CONDITION, formatDateTime } from '../lib/format.js';
 import { ManagerLoanTools } from './LoanActions.jsx';
-import { Empty, ErrorBox, Modal, Pagination, Spinner } from './ui.jsx';
-
-const KIND = {
-  created: 'Примірник створено',
-  condition_changed: 'Зміна фізичного стану',
-  temporary_unavailability_changed: 'Тимчасова недоступність',
-  issued: 'Видача',
-  returned: 'Повернення',
-  lost: 'Втрата за видачею',
-  lost_in_fund: 'Втрата у фонді',
-  found: 'Знайдено',
-  compensated: 'Відшкодування',
-  erroneous_return: 'Помилкове повернення',
-  extended: 'Продовження строку',
-  archived: 'Архівація',
-  restored: 'Відновлення',
-  inventory_number_corrected: 'Виправлення інвентарного номера',
-  book_changed: 'Зміна видання',
-};
-
-const KEY = {
-  inventoryNumber: 'інв. №',
-  condition: 'стан',
-  defectDescription: 'дефекти',
-  isTemporarilyUnavailable: 'тимчасово недоступний',
-  isLost: 'втрачений',
-  isArchived: 'в архіві',
-  bookId: 'видання №',
-};
-
-function formatValue(key, value) {
-  if (value === null || value === undefined) return '—';
-  if (typeof value === 'boolean') return value ? 'так' : 'ні';
-  if (key === 'condition') return CONDITION[value] ?? value;
-  return String(value);
-}
-
-function renderValue(value) {
-  if (value === null || value === undefined) return '—';
-  if (typeof value !== 'object') return String(value);
-  return Object.entries(value).map(([k, v]) => `${KEY[k] ?? k}: ${formatValue(k, v)}`).join('; ');
-}
+import { Empty, ErrorBox, Field, Modal, Pagination, Spinner } from './ui.jsx';
 
 export default function CopyHistoryModal({ copy, onClose, onChanged }) {
   const { isManager } = useAuth();
   const [page, setPage] = useState(1);
+  const [range, setRange] = useState({dateFrom:"",dateTo:""});
   const { data, meta, error, loading, reload } = useAsync(
-    () => api.get(`/api/v1/copies/${copy.id}/history`, { page, pageSize: 25 }),
-    [copy.id, page],
+    () => api.get(`/api/v1/copies/${copy.id}/history`, { page, pageSize: 25, ...range }),
+    [copy.id, page, range],
   );
 
   return (
     <Modal title={`Історія · інв. № ${copy.inventoryNumber}`} onClose={onClose} wide>
+      <div className="toolbar">{[['dateFrom','Видано / події з'],['dateTo','По дату']].map(([name,label]) => <Field key={name} label={label}>{(id) => <input id={id} type="date" value={range[name]} onChange={(e) => {setPage(1);setRange({...range,[name]:e.target.value});}} />}</Field>)}</div>
       <ErrorBox error={error} onRetry={reload} />
       {loading && !data && <Spinner />}
       {data?.length === 0 && <Empty>Подій немає.</Empty>}
@@ -68,15 +31,15 @@ export default function CopyHistoryModal({ copy, onClose, onChanged }) {
               <tr key={e.id}>
                 <td className="nowrap">{formatDateTime(e.occurredAt)}</td>
                 <td>
-                  {KIND[e.kind] ?? e.kind}
-                  {e.loanId && <div className="field__hint">видача №{e.loanId}</div>}
+                  {EVENT_KIND[e.kind] ?? 'Облікова зміна'}
+                  {e.loanId && <Link to={`/loans/${e.loanId}`}>Видача №{e.loanId}</Link>}
                   {isManager && e.loanId && (
                     <ManagerLoanTools loanId={e.loanId} onChanged={() => { reload(); onChanged?.(); }} />
                   )}
                 </td>
                 <td>
-                  {e.oldValue ? <div className="field__hint">було: {renderValue(e.oldValue)}</div> : null}
-                  <div>{renderValue(e.newValue)}</div>
+                  {e.oldValue ? <div className="field__hint">було: {eventValue(e.oldValue)}</div> : null}
+                  <div>{eventValue(e.newValue)}</div>
                 </td>
                 <td>{e.reason ?? '—'}</td>
                 <td>{e.actor?.displayName ?? '—'}</td>

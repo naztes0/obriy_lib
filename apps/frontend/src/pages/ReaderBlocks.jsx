@@ -25,7 +25,7 @@ function CreateBlockModal({ readerId, loans, onClose, onDone }) {
         <ErrorBox error={error} />
         <Field label="Видача-підстава" required error={error?.fields?.sourceLoanId}>
           {(id) => (
-            <select id={id} value={loanId} onChange={(e) => setLoanId(e.target.value)}>
+            <select id={id} required value={loanId} onChange={(e) => setLoanId(e.target.value)}>
               {loans.length === 0 && <option value="">Немає поточних видач</option>}
               {loans.map((l) => <option key={l.id} value={l.id}>{l.book.title} · інв. {l.copy.inventoryNumber} · до {formatDate(l.currentDueDate)}</option>)}
             </select>
@@ -47,7 +47,7 @@ function CreateBlockModal({ readerId, loans, onClose, onDone }) {
   );
 }
 
-export default function ReaderBlocks({ readerId, currentLoans, onChanged }) {
+export default function ReaderBlocks({ readerId, currentLoans, onChanged, hideCreate = false }) {
   const { isManager } = useAuth();
   const { data: blocks, error, loading, reload } = useAsync(() => api.get(`/api/v1/readers/${readerId}/blocks`), [readerId]);
   const [modal, setModal] = useState(null);
@@ -58,7 +58,7 @@ export default function ReaderBlocks({ readerId, currentLoans, onChanged }) {
     <div className="card">
       <div className="page-head">
         <h2>Блокування</h2>
-        <Button small variant="danger" onClick={() => setModal({ type: 'create' })}>Заблокувати</Button>
+        {isManager && !hideCreate && <Button small variant="danger" onClick={() => setModal({ type: 'create' })}>Заблокувати</Button>}
       </div>
       <ErrorBox error={error} onRetry={reload} />
       {loading && !blocks && <Spinner />}
@@ -139,7 +139,7 @@ function DecideModal({ request, onClose, onDone }) {
           )}
         </Field>
         <Field label="Коментар" error={error?.fields?.comment}>
-          {(id) => <textarea id={id} rows={2} value={comment} onChange={(e) => setComment(e.target.value)} />}
+          {(id) => <textarea id={id} rows={2} maxLength={500} value={comment} onChange={(e) => setComment(e.target.value)} />}
         </Field>
         <div className="modal__foot">
           <Button onClick={onClose}>Скасувати</Button>

@@ -30,6 +30,8 @@ export class CatalogService {
   }
 
   async listBooks(searchParams) {
+    const textbook = searchParams.get('isTextbook');
+    if (textbook !== null && !['true','false'].includes(textbook)) throw new AppError(400,'INVALID_QUERY','Некоректний фільтр підручників.');
     const pagination = readPagination(searchParams);
     const archived = searchParams.get('archived') ?? 'active';
     if (!['active', 'archived', 'all'].includes(archived)) {
@@ -44,6 +46,7 @@ export class CatalogService {
         author: readTextFilter(searchParams, 'author'),
         publisher: readTextFilter(searchParams, 'publisher'),
         archived,
+        ...(textbook === null ? {} : { isTextbook: textbook === 'true' }),
       },
       pageSize: pagination.pageSize,
       offset: pagination.offset,

@@ -5,8 +5,9 @@ import { useAuth } from '../auth/AuthContext.jsx';
 import { Button, ErrorBox, Field, Modal, Notice } from '../components/ui.jsx';
 import { CATEGORY } from '../lib/format.js';
 import { useAsync, useSubmit } from '../lib/hooks.js';
+import { patterns } from '../lib/validation.js';
 
-export default function ReaderFormModal({ reader, onClose, onSaved }) {
+export default function ReaderFormModal({ reader, initialClassId = '', onClose, onSaved }) {
   const { isManager } = useAuth();
   const editing = Boolean(reader);
   const { data: classes } = useAsync(() => api.get('/api/v1/school-classes', { status: 'active' }), []);
@@ -17,7 +18,7 @@ export default function ReaderFormModal({ reader, onClose, onSaved }) {
     address: reader?.address ?? '',
     ticketType: reader?.ticketType ?? 'existing',
     ticketNumber: reader?.ticketNumber ?? '',
-    classId: reader?.schoolClass?.id ?? '',
+    classId: reader?.schoolClass?.id ?? initialClassId,
     ticketExpiresOn: reader?.ticketExpiresOn ?? '',
   });
   const [confirmNamesake, setConfirmNamesake] = useState(false);
@@ -35,7 +36,7 @@ export default function ReaderFormModal({ reader, onClose, onSaved }) {
         address: form.address || null,
         ticketType: student && electronic ? 'electronic' : 'existing',
         ...(student && electronic ? {} : { ticketNumber: form.ticketNumber }),
-        classId: student ? form.classId : null,
+        classId: student ? form.classId || null : null,
         ticketExpiresOn: student ? form.ticketExpiresOn : null,
         confirmNamesake,
       });
@@ -46,10 +47,10 @@ export default function ReaderFormModal({ reader, onClose, onSaved }) {
     if (form.phone !== reader.phone) changed.phone = form.phone;
     if ((form.address || null) !== (reader.address || null)) changed.address = form.address || null;
     if (form.ticketNumber !== reader.ticketNumber) changed.ticketNumber = form.ticketNumber;
-    if (student && form.classId !== (reader.schoolClass?.id ?? '')) changed.classId = form.classId;
+    if (student && form.classId !== (reader.schoolClass?.id ?? '')) changed.classId = form.classId || null;
     if (student && form.ticketExpiresOn !== (reader.ticketExpiresOn ?? '')) changed.ticketExpiresOn = form.ticketExpiresOn;
     if (form.category !== reader.category && !student) { changed.classId = null; changed.ticketExpiresOn = null; }
-    return api.patch(`/api/v1/readers/${reader.id}`, { ...changed, confirmNamesake, confirmTicketNumberChange: confirmTicketChange, reason });
+    return api.patch(`/api/v1/readers/${reader.id}`, { ...changed, version: reader.version, confirmNamesake, confirmTicketNumberChange: confirmTicketChange, reason });
   }, [form, editing, reader, student, electronic, confirmNamesake, confirmTicketChange, reason]);
   const { submit, busy, error } = useSubmit(action);
   const fields = error?.fields ?? {};
@@ -90,7 +91,7 @@ export default function ReaderFormModal({ reader, onClose, onSaved }) {
           </Notice>
         )}
         <Field label="ПІБ" required error={fields.fullName}>
-          {(id) => <input id={id} value={form.fullName} onChange={set('fullName')} autoFocus />}
+          {(id) => <input id={id} value={form.fullName} onChange={set('fullName')} required minLength={3} maxLength={200} pattern={patterns.personName} title="Вкажіть щонайменше прізвище та ім’я літерами" autoComplete="name" autoFocus />}
         </Field>
         <div className="grid2">
           <Field label="Категорія" required error={fields.category}>
@@ -101,21 +102,21 @@ export default function ReaderFormModal({ reader, onClose, onSaved }) {
             )}
           </Field>
           <Field label="Особистий телефон" required error={fields.phone} hint="Формат +380XXXXXXXXX без пробілів. Номер батьків не використовується.">
-            {(id) => <input id={id} value={form.phone} onChange={set('phone')} inputMode="tel" />}
+            {(id) => <input id={id} type="tel" value={form.phone} onChange={set('phone')} required pattern={patterns.phone} maxLength={13} title="Формат: +380XXXXXXXXX" autoComplete="tel" inputMode="tel" />}
           </Field>
         </div>
         {student && (
           <div className="grid2">
-            <Field label="Клас" required error={fields.classId}>
+            <Field label="Клас" error={fields.classId} hint="Необов’язково. Учень без класу може отримувати окремі книги.">
               {(id) => (
                 <select id={id} value={form.classId} onChange={set('classId')}>
-                  <option value="">— оберіть клас —</option>
+                  <option value="">Не зазначено</option>
                   {(classes ?? []).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
               )}
             </Field>
             <Field label="Квиток чинний до" required error={fields.ticketExpiresOn} hint="За даними ліцею про завершення навчання.">
-              {(id) => <input id={id} type="date" value={form.ticketExpiresOn} onChange={set('ticketExpiresOn')} />}
+              {(id) => <input id={id} type="date" value={form.ticketExpiresOn} onChange={set('ticketExpiresOn')} required />}
             </Field>
           </div>
         )}
@@ -129,15 +130,15 @@ export default function ReaderFormModal({ reader, onClose, onSaved }) {
         {!(student && electronic && !editing) && (
           <Field label="Номер читацького квитка" required error={fields.ticketNumber}
             hint={editing && !isManager ? 'Змінити номер може лише завідувач.' : '1–32 символи: літери, цифри, дефіс, коса риска.'}>
-            {(id) => <input id={id} value={form.ticketNumber} onChange={set('ticketNumber')} disabled={editing && !isManager} />}
+            {(id) => <input id={id} value={form.ticketNumber} onChange={set('ticketNumber')} required pattern={electronic ? 'E-[0-9]{6}' : patterns.ticket} minLength={electronic ? 8 : 1} maxLength={32} title={electronic ? 'Формат електронного квитка: E-000000' : '1–32 літери, цифри, дефіс або /'} disabled={editing && !isManager} />}
           </Field>
         )}
         <Field label="Адреса" error={fields.address} hint="Необов’язково.">
-          {(id) => <input id={id} value={form.address} onChange={set('address')} />}
+          {(id) => <input id={id} value={form.address} onChange={set('address')} maxLength={500} autoComplete="street-address" />}
         </Field>
         {editing && form.ticketNumber !== reader.ticketNumber && (
           <Field label="Причина виправлення номера" required error={fields.reason}>
-            {(id) => <input id={id} value={reason} onChange={(e) => setReason(e.target.value)} />}
+            {(id) => <input id={id} value={reason} onChange={(e) => setReason(e.target.value)} required minLength={3} maxLength={500} />}
           </Field>
         )}
         <div className="modal__foot">

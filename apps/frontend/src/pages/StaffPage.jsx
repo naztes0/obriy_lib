@@ -4,6 +4,7 @@ import { useAuth } from '../auth/AuthContext.jsx';
 import { Badge, Button, ErrorBox, Field, Modal, Notice, PageHeader, Spinner } from '../components/ui.jsx';
 import { ROLE, formatDateTime } from '../lib/format.js';
 import { useAsync, useSubmit } from '../lib/hooks.js';
+import { patterns } from '../lib/validation.js';
 
 function FormModal({ title, onClose, onDone, run, children, canSubmit, submitLabel = 'Зберегти', error, busy, submit }) {
   return (
@@ -30,13 +31,13 @@ function CreateModal({ onClose, onDone }) {
     <FormModal title="Новий бібліотекар" onClose={onClose} onDone={onDone} submit={submit} busy={busy} error={error}
       canSubmit={form.login && form.displayName && form.password} submitLabel="Створити">
       <Field label="Логін" required error={f.login} hint="3–64 символи: латинські літери, цифри, . _ -">
-        {(id) => <input id={id} value={form.login} onChange={set('login')} autoFocus autoComplete="off" />}
+        {(id) => <input id={id} value={form.login} onChange={set('login')} required pattern={patterns.staffLogin} minLength={3} maxLength={64} title="3–64 латинські літери, цифри, крапка, _ або -" autoCapitalize="none" autoFocus autoComplete="off" />}
       </Field>
       <Field label="Ім’я для відображення" required error={f.displayName}>
-        {(id) => <input id={id} value={form.displayName} onChange={set('displayName')} />}
+        {(id) => <input id={id} value={form.displayName} onChange={set('displayName')} required minLength={2} maxLength={200} />}
       </Field>
       <Field label="Початковий пароль" required error={f.password} hint="8–128 символів. Передайте його працівнику безпечним способом.">
-        {(id) => <input id={id} type="password" value={form.password} onChange={set('password')} autoComplete="new-password" />}
+        {(id) => <input id={id} type="password" value={form.password} onChange={set('password')} required minLength={8} maxLength={128} autoComplete="new-password" />}
       </Field>
     </FormModal>
   );
@@ -50,7 +51,7 @@ function ResetPasswordModal({ account, onClose, onDone }) {
     <FormModal title={`Скинути пароль · ${account.login}`} onClose={onClose} onDone={onDone} submit={submit} busy={busy} error={error}
       canSubmit={newPassword} submitLabel="Встановити пароль">
       <Field label="Новий пароль" required error={error?.fields?.newPassword} hint="8–128 символів.">
-        {(id) => <input id={id} type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} autoFocus autoComplete="new-password" />}
+        {(id) => <input id={id} type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} required minLength={8} maxLength={128} autoFocus autoComplete="new-password" />}
       </Field>
     </FormModal>
   );
@@ -65,10 +66,10 @@ function OwnPasswordModal({ onClose, onDone }) {
     <FormModal title="Змінити мій пароль" onClose={onClose} onDone={onDone} submit={submit} busy={busy} error={error}
       canSubmit={form.currentPassword && form.newPassword}>
       <Field label="Поточний пароль" required error={f.currentPassword}>
-        {(id) => <input id={id} type="password" value={form.currentPassword} onChange={(e) => setForm({ ...form, currentPassword: e.target.value })} autoFocus autoComplete="current-password" />}
+        {(id) => <input id={id} type="password" value={form.currentPassword} onChange={(e) => setForm({ ...form, currentPassword: e.target.value })} required minLength={1} maxLength={256} autoFocus autoComplete="current-password" />}
       </Field>
       <Field label="Новий пароль" required error={f.newPassword} hint="8–128 символів.">
-        {(id) => <input id={id} type="password" value={form.newPassword} onChange={(e) => setForm({ ...form, newPassword: e.target.value })} autoComplete="new-password" />}
+        {(id) => <input id={id} type="password" value={form.newPassword} onChange={(e) => setForm({ ...form, newPassword: e.target.value })} required minLength={8} maxLength={128} autoComplete="new-password" />}
       </Field>
     </FormModal>
   );

@@ -1,7 +1,10 @@
 import { useCallback, useState } from 'react';
+import { Link } from 'react-router-dom';
+import ActionModal from '../components/ActionModal.jsx';
 import api from '../api/client.js';
 import { Badge, Button, Empty, ErrorBox, Field, Modal, Notice, PageHeader, Spinner } from '../components/ui.jsx';
 import { useAsync, useSubmit } from '../lib/hooks.js';
+import { patterns } from '../lib/validation.js';
 
 function ClassModal({ schoolClass, onClose, onDone }) {
   const [name, setName] = useState(schoolClass?.name ?? '');
@@ -17,7 +20,7 @@ function ClassModal({ schoolClass, onClose, onDone }) {
       <form onSubmit={async (e) => { e.preventDefault(); const r = await submit(); if (r) onDone(); }}>
         <ErrorBox error={error?.code === 'VALIDATION_ERROR' ? null : error} />
         <Field label="Назва класу" required error={error?.fields?.name} hint="Наприклад: 7-А. До 64 символів.">
-          {(id) => <input id={id} value={name} onChange={(e) => setName(e.target.value)} autoFocus />}
+          {(id) => <input id={id} value={name} onChange={(e) => setName(e.target.value)} required pattern={patterns.className} minLength={1} maxLength={64} title="До 64 літер, цифр, пробілів, крапок або дефісів" autoFocus />}
         </Field>
         <div className="modal__foot">
           <Button onClick={onClose}>Скасувати</Button>
@@ -68,12 +71,13 @@ export default function ClassesPage() {
           <tbody>
             {(data ?? []).map((c) => (
               <tr key={c.id}>
-                <td><strong>{c.name}</strong></td>
+                <td><Link to={`/classes/${c.id}`}><strong>{c.name}</strong></Link></td>
                 <td>{c.isActive ? <Badge kind="ok">Активний</Badge> : <Badge>Неактивний</Badge>}</td>
                 <td>
                   <div className="actions">
                     <Button small onClick={() => setModal(c)}>Перейменувати</Button>
                     <Button small onClick={() => toggle(c)}>{c.isActive ? 'Деактивувати' : 'Активувати'}</Button>
+                    <Button small variant="danger" onClick={() => setModal({type:'delete',schoolClass:c})}>Вилучити</Button>
                   </div>
                 </td>
               </tr>
@@ -81,7 +85,9 @@ export default function ClassesPage() {
           </tbody>
         </table>
       )}
-      {modal && (
+      {modal?.type === 'delete' && <ActionModal title={`Вилучити клас ${modal.schoolClass.name}`} description="Можливо лише без пов’язаних записів. Картки учнів та історію видач не буде видалено." required={false} submitLabel="Вилучити клас" danger
+        run={() => api.post(`/api/v1/school-classes/${modal.schoolClass.id}/delete`,{confirm:true})} onClose={() => setModal(null)} onDone={() => {setModal(null);setFlash('Клас вилучено.');reload();}} />}
+      {modal && modal.type !== 'delete' && (
         <ClassModal
           schoolClass={modal.id ? modal : null}
           onClose={() => setModal(null)}

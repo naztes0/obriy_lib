@@ -55,6 +55,10 @@ export function validateLoanIssue(input) {
   const errors = {};
   const readerId = readId(input.readerId, 'readerId', errors);
   const copyId = readId(input.copyId, 'copyId', errors);
+  const versions = {};
+  for (const field of ['readerVersion','copyVersion']) {
+    if (input[field] !== undefined) versions[field] = readId(input[field], field, errors);
+  }
   let dueDate = null;
   if (input.dueDate !== undefined && input.dueDate !== null && input.dueDate !== '') {
     if (!isValidDate(input.dueDate)) {
@@ -64,7 +68,7 @@ export function validateLoanIssue(input) {
     }
   }
   if (Object.keys(errors).length) validationError(errors);
-  return { readerId, copyId, dueDate };
+  return { readerId, copyId, dueDate, ...versions };
 }
 
 export function validateLoanReturn(input) {

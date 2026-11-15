@@ -6,12 +6,15 @@ import BatchIssuePage from './pages/BatchIssuePage.jsx';
 import BookDetailPage from './pages/BookDetailPage.jsx';
 import BooksPage from './pages/BooksPage.jsx';
 import ClassesPage from './pages/ClassesPage.jsx';
+import ClassDetailPage from './pages/ClassDetailPage.jsx';
 import HelpPage from './pages/HelpPage.jsx';
 import LoansPage from './pages/LoansPage.jsx';
+import LoanDetailPage from './pages/LoanDetailPage.jsx';
 import LoginPage from './pages/LoginPage.jsx';
 import NotFoundPage from './pages/NotFoundPage.jsx';
 import StaffPage from './pages/StaffPage.jsx';
 import ReportsPage from './pages/ReportsPage.jsx';
+import RestrictionsPage from './pages/RestrictionsPage.jsx';
 import ReaderDetailPage from './pages/ReaderDetailPage.jsx';
 import ReadersPage from './pages/ReadersPage.jsx';
 
@@ -38,10 +41,13 @@ export default function App() {
         <Route path="/readers/:readerId" element={<ReaderDetailPage />} />
         <Route path="/loans" element={<LoansPage />} />
         <Route path="/loans/batch" element={<BatchIssuePage />} />
+        <Route path="/loans/:loanId" element={<LoanDetailPage />} />
         <Route path="/reports" element={<ReportsPage />} />
+        <Route path="/restrictions" element={<RestrictionsPage />} />
         <Route path="/staff" element={<RequireAuth managerOnly><StaffPage /></RequireAuth>} />
         <Route path="/help" element={<HelpPage />} />
         <Route path="/classes" element={<RequireAuth managerOnly><ClassesPage /></RequireAuth>} />
+        <Route path="/classes/:classId" element={<RequireAuth managerOnly><ClassDetailPage /></RequireAuth>} />
         <Route path="*" element={<NotFoundPage />} />
       </Route>
     </Routes>

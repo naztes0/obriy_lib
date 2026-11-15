@@ -13,6 +13,7 @@ export function Spinner({ label = 'Завантаження…' }) {
 export function ErrorBox({ error, onRetry }) {
   if (!error) return null;
   const technical = error.status === 0 || error.status >= 500;
+  const retry = onRetry ?? (['VERSION_CONFLICT','READER_STATE_CHANGED'].includes(error.code) ? () => window.dispatchEvent(new Event('data:refresh')) : null);
   return (
     <div className="alert alert--error" role="alert">
       <div>{error.message}</div>
@@ -22,8 +23,8 @@ export function ErrorBox({ error, onRetry }) {
           {formatDateTime(new Date().toISOString())}
         </div>
       )}
-      {onRetry && (
-        <button type="button" className="btn btn--small" onClick={onRetry}>
+      {retry && (
+        <button type="button" className="btn btn--small" onClick={retry}>
           Оновити дані
         </button>
       )}
@@ -44,7 +45,7 @@ export function Button({ busy, children, variant = 'default', small, ...props })
     .filter(Boolean)
     .join(' ');
   return (
-    <button type="button" className={classes} disabled={busy || props.disabled} {...props}>
+    <button type="button" className={classes} {...props} disabled={busy || props.disabled}>
       {busy ? 'Зачекайте…' : children}
     </button>
   );
@@ -65,17 +66,31 @@ export function Field({ label, hint, error, children, required }) {
   );
 }
 
-export function Modal({ title, onClose, children, wide }) {
+export function Modal({ title, onClose, children, wide, busy = false }) {
   const ref = useRef(null);
+  const previousFocus = useRef(document.activeElement);
+  const closeRef = useRef(onClose);
+  const busyRef = useRef(busy);
+  closeRef.current = onClose;
+  busyRef.current = busy;
   useEffect(() => {
-    const onKey = (event) => event.key === 'Escape' && onClose();
+    const onKey = (event) => {
+      if (event.key === 'Escape' && !busyRef.current) closeRef.current();
+      if (event.key === 'Tab') {
+        const elements = [...(ref.current?.querySelectorAll('button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), a[href], [tabindex="0"]') ?? [])].filter((e) => e.getClientRects().length);
+        const first = elements[0]; const last = elements.at(-1);
+        if (!first) { event.preventDefault(); return; }
+        if (event.shiftKey && (document.activeElement === first || document.activeElement === ref.current)) { event.preventDefault(); last.focus(); }
+        if (!event.shiftKey && (document.activeElement === last || document.activeElement === ref.current)) { event.preventDefault(); first.focus(); }
+      }
+    };
     document.addEventListener('keydown', onKey);
     ref.current?.focus();
-    return () => document.removeEventListener('keydown', onKey);
-  }, [onClose]);
+    return () => { document.removeEventListener('keydown', onKey); previousFocus.current?.focus(); };
+  }, []);
 
   return (
-    <div className="modal-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+    <div className="modal-backdrop" onMouseDown={(e) => !busy && e.target === e.currentTarget && onClose()}>
       <div
         className={`modal${wide ? ' modal--wide' : ''}`}
         role="dialog"
@@ -86,7 +101,7 @@ export function Modal({ title, onClose, children, wide }) {
       >
         <div className="modal__head">
           <h2>{title}</h2>
-          <button type="button" className="icon-btn" onClick={onClose} aria-label="Закрити">
+          <button type="button" className="icon-btn" disabled={busy} onClick={onClose} aria-label="Закрити">
             ×
           </button>
         </div>
@@ -124,10 +139,14 @@ export function LoanStatusBadge({ status }) {
   return <Badge kind={kind}>{LOAN_STATUS[status] ?? status}</Badge>;
 }
 
-export function PageHeader({ title, actions }) {
+export function PageHeader({ title, subtitle, eyebrow, actions }) {
   return (
     <div className="page-head">
-      <h1>{title}</h1>
+      <div className="page-head__copy">
+        {eyebrow && <div className="page-head__eyebrow">{eyebrow}</div>}
+        <h1>{title}</h1>
+        {subtitle && <p>{subtitle}</p>}
+      </div>
       <div className="page-head__actions">{actions}</div>
     </div>
   );

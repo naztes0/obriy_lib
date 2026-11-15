@@ -46,7 +46,7 @@ const BookCell = ({ row }) => (
 const GroupCell = ({ row }) => (
   <>
     {row.readerCategory ? CATEGORY[row.readerCategory] : '—'}
-    {row.className && <div className="field__hint">{row.className}</div>}
+    <div className="field__hint">{row.className ?? 'Не зазначено'}</div>
   </>
 );
 
@@ -75,10 +75,10 @@ const REPORTS = {
       }],
     ],
   },
-  'current-loans': { label: 'Поточні видачі', filters: ['period', 'category', 'class'], columns: loanColumns },
-  'overdue-loans': { label: 'Прострочені видачі', filters: ['period', 'category', 'class'], columns: loanColumns },
+  'current-loans': { label: 'Поточні видачі', filters: ['category', 'class'], columns: loanColumns },
+  'overdue-loans': { label: 'Прострочені видачі', filters: ['category', 'class'], columns: loanColumns },
   'unresolved-losses': {
-    label: 'Неврегульовані втрати', filters: ['period', 'category', 'class'],
+    label: 'Неврегульовані втрати', filters: ['category', 'class'],
     columns: [
       ['Книга / примірник', (r) => <BookCell row={r} />],
       ['Читач', (r) => <ReaderCell reader={r.reader} />],
@@ -147,7 +147,7 @@ function ActivityBreakdown({ summary }) {
           <thead><tr><th>Клас</th><th>Видач</th></tr></thead>
           <tbody>
             {summary.byClasses.length === 0 && <tr><td colSpan="2" className="row-muted">Немає даних.</td></tr>}
-            {summary.byClasses.map((c) => <tr key={c.className ?? 'none'}><td>{c.className ?? '—'}</td><td>{c.issues}</td></tr>)}
+            {summary.byClasses.map((c) => <tr key={c.className ?? 'none'}><td>{c.className ?? 'Не зазначено'}</td><td>{c.issues}</td></tr>)}
           </tbody>
         </table>
         <h3>За категоріями читачів</h3>
@@ -238,6 +238,7 @@ export default function ReportsPage() {
           ? 'Період відбирає записи за датою події (Europe/Kyiv), обидві межі включно.'
           : 'Звіт показує поточний стан.'}
       </p>
+      {type === 'unresolved-losses' && <p className="field__hint">Втрати без встановленого читача показані окремо. Фільтри класу й категорії до них не застосовуються.</p>}
 
       <ErrorBox error={error} onRetry={reload} />
       {loading && !data ? <Spinner /> : (
@@ -246,16 +247,21 @@ export default function ReportsPage() {
           {type === 'reader-activity' && <ActivityBreakdown summary={meta?.summary} />}
           <h3>Деталізація</h3>
           {data?.length === 0 ? <Empty>За цими умовами записів немає.</Empty> : (
+            <>
+            {(type === 'unresolved-losses' ? ['reader','fund'] : ['all']).map((group) => <section key={group}>
+            {group !== 'all' && <h3>{group === 'reader' ? 'Втрати за видачами' : 'Втрати без встановленого читача'}</h3>}
             <table>
               <thead><tr>{config.columns.map(([title]) => <th key={title}>{title}</th>)}</tr></thead>
               <tbody>
-                {(data ?? []).map((row, i) => (
+                {(data ?? []).filter((row) => group === 'all' || (group === 'fund' ? !row.reader : Boolean(row.reader))).map((row, i) => (
                   <tr key={row.id ?? row.loanId ?? `${row.copy?.id}-${i}`}>
                     {config.columns.map(([title, render]) => <td key={title}>{render(row)}</td>)}
                   </tr>
                 ))}
               </tbody>
             </table>
+            </section>)}
+            </>
           )}
           <Pagination meta={meta} onPage={setPage} />
         </>

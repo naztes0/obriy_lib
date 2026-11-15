@@ -85,7 +85,7 @@ export function registerCopyRoutes(router, { authService, copyService }) {
     '/api/v1/copies/:copyId/delete',
     requireRole(
       authService,
-      ['manager'],
+      ['manager', 'librarian'],
       async ({ request, response, requestId, params, actor }) => {
         const result = await copyService.deleteUnusedCopy(
           params.copyId,

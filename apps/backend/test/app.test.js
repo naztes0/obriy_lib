@@ -615,8 +615,8 @@ test('loan issue route passes JSON, actor and idempotency key', async () => {
   assert.deepEqual(received, { input, actor, key: 'issue-request-http-1' });
 });
 
-test('reader block route passes JSON, actor and idempotency key', async () => {
-  const actor = { id: '2', role: 'librarian' };
+test('manager block route passes JSON, actor and idempotency key', async () => {
+  const actor = { id: '1', role: 'manager' };
   const authService = {
     authenticateToken: async () => actor,
     login: async () => {},
@@ -920,7 +920,7 @@ test('librarian can archive a copy through the inventory lifecycle route', async
   });
 });
 
-test('librarian cannot restore, delete, renumber or write off a copy', async () => {
+test('librarian cannot restore, renumber or write off a copy', async () => {
   const authService = {
     authenticateToken: async () => ({ id: '2', role: 'librarian' }),
     login: async () => {},
@@ -938,7 +938,6 @@ test('librarian cannot restore, delete, renumber or write off a copy', async () 
   );
   const paths = [
     ['POST', '/api/v1/copies/12/restore'],
-    ['POST', '/api/v1/copies/12/delete'],
     ['PATCH', '/api/v1/copies/12/inventory-number'],
     ['POST', '/api/v1/copies/12/write-off'],
   ];
@@ -957,7 +956,7 @@ test('librarian cannot restore, delete, renumber or write off a copy', async () 
   }
 });
 
-test('librarian can archive a book but cannot restore or delete it', async () => {
+test('librarian can archive a book but cannot restore it', async () => {
   const actor = { id: '2', role: 'librarian' };
   const authService = {
     authenticateToken: async () => actor,
@@ -985,7 +984,7 @@ test('librarian can archive a book but cannot restore or delete it', async () =>
   });
   assert.equal(archive.status, 200);
 
-  for (const path of ['/api/v1/books/8/restore', '/api/v1/books/8/delete']) {
+  for (const path of ['/api/v1/books/8/restore']) {
     const response = await fetch(`${baseUrl}${path}`, {
       method: 'POST',
       headers: {

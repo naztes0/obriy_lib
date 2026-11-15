@@ -43,7 +43,7 @@ function AddCopyModal({ bookId, onClose, onDone }) {
         <ErrorBox error={error?.code === 'VALIDATION_ERROR' ? null : error} />
         <Field label="Інвентарний номер" required error={fields.inventoryNumber}
           hint="З маркування примірника. 1–32 символи: літери, цифри, дефіс, коса риска.">
-          {(id) => <input id={id} value={inventoryNumber} onChange={(e) => setInventoryNumber(e.target.value)} autoFocus />}
+          {(id) => <input id={id} required minLength={1} maxLength={64} value={inventoryNumber} onChange={(e) => setInventoryNumber(e.target.value)} autoFocus />}
         </Field>
         <Field label="Фізичний стан" required error={fields.condition}>
           {(id) => (
@@ -56,7 +56,7 @@ function AddCopyModal({ bookId, onClose, onDone }) {
         </Field>
         {needsDefect && (
           <Field label="Опис дефектів" required error={fields.defectDescription}>
-            {(id) => <textarea id={id} rows={3} value={defect} onChange={(e) => setDefect(e.target.value)} />}
+            {(id) => <textarea id={id} rows={3} required minLength={3} maxLength={500} value={defect} onChange={(e) => setDefect(e.target.value)} />}
           </Field>
         )}
         <div className="modal__foot">
@@ -101,7 +101,7 @@ export default function BookDetailPage() {
             ) : (
               <Button variant="danger" onClick={() => setModal({ type: 'archiveBook' })}>В архів</Button>
             )}
-            {isManager && <Button variant="danger" onClick={() => setModal({ type: 'deleteBook' })}>Видалити</Button>}
+            <Button variant="danger" onClick={() => setModal({ type: 'deleteBook' })}>Видалити</Button>
           </>
         }
       />
@@ -148,9 +148,9 @@ export default function BookDetailPage() {
                 <div className="actions">
                   <Button small variant="primary" disabled={!copy.isAvailable} onClick={() => setModal({ type: 'issue', copy })}>Видати</Button>
                   <Button small onClick={() => setModal({ type: 'history', copy })}>Історія</Button>
-                  {copy.isArchived && isManager && (
+                  {copy.isArchived && (
                     <>
-                      <Button small onClick={() => setModal({ type: 'restoreCopy', copy })} disabled={book.isArchived} title={book.isArchived ? 'Спочатку відновіть книгу' : undefined}>Відновити</Button>
+                      <Button small onClick={() => setModal({ type: 'restoreCopy', copy })} disabled={!isManager || book.isArchived} title={book.isArchived ? 'Спочатку відновіть книгу' : undefined}>Відновити</Button>
                       <Button small variant="danger" onClick={() => setModal({ type: 'deleteCopy', copy })}>Видалити</Button>
                     </>
                   )}
@@ -164,10 +164,15 @@ export default function BookDetailPage() {
                         <Button small variant="danger" onClick={() => setModal({ type: 'loss', copy })}>Втрата</Button>
                       )}
                       {copy.isLost && isManager && (
-                        <Button small onClick={() => setModal({ type: 'found', copy })}>Знайдено</Button>
+                        <>
+                          <Button small onClick={() => setModal({ type: 'found', copy })}>Знайдено</Button>
+                          <Button small onClick={() => setModal({ type: 'correctLoss', copy })}>Позначка втрати помилкова</Button>
+                          <Button small onClick={() => setModal({ type: 'settleLoss', copy })}>Врегулювати втрату у фонді</Button>
+                        </>
                       )}
                       <Button small onClick={() => setModal({ type: 'changeBook', copy })}>Змінити видання</Button>
                       <Button small onClick={() => setModal({ type: 'archiveCopy', copy })}>В архів</Button>
+                      <Button small variant="danger" onClick={() => setModal({ type: 'deleteCopy', copy })}>Видалити без історії</Button>
                       {isManager && (
                         <>
                           <Button small onClick={() => setModal({ type: 'inventory', copy })}>Інв. №</Button>
@@ -188,13 +193,18 @@ export default function BookDetailPage() {
       )}
       {modal?.type === 'addCopy' && <AddCopyModal bookId={book.id} onClose={close} onDone={done('Примірник додано.')} />}
       {modal?.type === 'condition' && <ConditionModal copy={modal.copy} onClose={close} onDone={done('Стан примірника збережено.')} />}
+      {['correctLoss', 'settleLoss'].includes(modal?.type) && <ActionModal
+        title={modal.type === 'correctLoss' ? 'Виправити помилкову позначку втрати' : 'Врегулювати втрату без видачі'}
+        description={modal.type === 'correctLoss' ? 'Підтвердіть помилковість запису. Інші обмеження доступності залишаються. За відкритої видачі використайте виправлення її статусу.' : 'Зафіксуйте рішення та підставу списання. Примірник залишиться втраченим і недоступним, але його можна буде списати.'}
+        label="Підстава / рішення" submitLabel="Підтвердити" run={(key,reason) => api.post(`/api/v1/copies/${modal.copy.id}/${modal.type === 'correctLoss' ? 'correct-loss' : 'settle-loss'}`, {version: modal.copy.version,reason,confirm:true},key)} onClose={close} onDone={done('Рішення збережено в аудиті.')} />}
       {modal?.type === 'issue' && (
         <IssueLoanModal
+          bookId={book.id}
           copy={modal.copy}
           bookTitle={book.title}
           isTextbook={book.isTextbook}
           onClose={close}
-          onDone={done('Видачу оформлено.')}
+          onDone={(loan) => { close(); navigate(`/loans/${loan.id}`); }}
         />
       )}
       {modal?.type === 'unavailable' && (

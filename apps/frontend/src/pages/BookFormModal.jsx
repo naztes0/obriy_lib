@@ -3,11 +3,14 @@ import { Link } from 'react-router-dom';
 import api from '../api/client.js';
 import { Button, ErrorBox, Field, Modal, Notice } from '../components/ui.jsx';
 import { useSubmit } from '../lib/hooks.js';
+import { currentKyivYear, uniqueNonEmpty } from '../lib/validation.js';
 
 export default function BookFormModal({ book, onClose, onSaved }) {
   const [form, setForm] = useState({
     title: book?.title ?? '',
-    authors: (book?.authors ?? []).map((a) => a.name ?? a).join('\n'),
+    authors: (book?.authors ?? []).map((a) => a.name ?? a).length
+      ? (book?.authors ?? []).map((a) => a.name ?? a)
+      : [''],
     publisher: book?.publisher ?? '',
     publicationYear: book?.publicationYear ?? '',
     isbn: book?.isbn ?? '',
@@ -18,7 +21,7 @@ export default function BookFormModal({ book, onClose, onSaved }) {
   const action = useCallback(async () => {
     const body = {
       title: form.title,
-      authors: form.authors.split('\n').map((s) => s.trim()).filter(Boolean),
+      authors: uniqueNonEmpty(form.authors),
       publisher: form.publisher,
       publicationYear: form.publicationYear === '' ? null : Number(form.publicationYear),
       isbn: form.isbn.trim() || null,
@@ -39,6 +42,14 @@ export default function BookFormModal({ book, onClose, onSaved }) {
 
   const fields = error?.fields ?? {};
   const set = (name) => (e) => setForm((f) => ({ ...f, [name]: e.target.value }));
+  const setAuthor = (index, value) => setForm((f) => ({ ...f, authors: f.authors.map((author, i) => i === index ? value : author) }));
+  const addAuthor = () => setForm((f) => ({ ...f, authors: [...f.authors, ''] }));
+  const removeAuthor = (index) => setForm((f) => ({ ...f, authors: f.authors.filter((_, i) => i !== index) }));
+  const moveAuthor = (index, direction) => setForm((f) => {
+    const next = [...f.authors];
+    [next[index], next[index + direction]] = [next[index + direction], next[index]];
+    return { ...f, authors: next };
+  });
   const isbnDuplicate = error?.code === 'ISBN_ALREADY_EXISTS' ? error.details?.book : null;
   const possibleDuplicates = error?.code === 'POSSIBLE_BOOK_DUPLICATE' ? error.details?.matches : null;
   const showGenericError = error && !isbnDuplicate && !possibleDuplicates && error.code !== 'VALIDATION_ERROR';
@@ -72,21 +83,34 @@ export default function BookFormModal({ book, onClose, onSaved }) {
           </Notice>
         )}
         <Field label="Назва" required error={fields.title}>
-          {(id) => <input id={id} value={form.title} onChange={set('title')} maxLength={500} autoFocus />}
+          {(id) => <input id={id} value={form.title} onChange={set('title')} minLength={1} maxLength={500} required autoFocus />}
         </Field>
-        <Field label="Автори" required error={fields.authors} hint="Кожен автор — з нового рядка. Невідомий — «Не встановлено».">
-          {(id) => <textarea id={id} rows={3} value={form.authors} onChange={set('authors')} />}
-        </Field>
+        <fieldset className={`author-editor${fields.authors ? ' author-editor--invalid' : ''}`}>
+          <legend>Автори <span className="field__req">*</span></legend>
+          <p className="field__hint">Окремий запис для кожного автора; порядок відповідає полю <code>book_authors.position</code> у БД.</p>
+          {form.authors.map((author, index) => (
+            <div className="author-row" key={index}>
+              <span className="author-row__number">{index + 1}</span>
+              <input aria-label={`Автор ${index + 1}`} value={author} onChange={(e) => setAuthor(index, e.target.value)}
+                required maxLength={200} placeholder="Прізвище та ім’я автора" autoFocus={index === 0} />
+              <Button small onClick={() => moveAuthor(index, -1)} disabled={index === 0} aria-label="Перемістити вище">↑</Button>
+              <Button small onClick={() => moveAuthor(index, 1)} disabled={index === form.authors.length - 1} aria-label="Перемістити нижче">↓</Button>
+              <Button small variant="danger" onClick={() => removeAuthor(index)} disabled={form.authors.length === 1} aria-label="Видалити автора">×</Button>
+            </div>
+          ))}
+          {fields.authors && <div className="field__error">{fields.authors}</div>}
+          <Button small onClick={addAuthor}>+ Додати автора</Button>
+        </fieldset>
         <div className="grid2">
           <Field label="Видавництво" required error={fields.publisher} hint="Невідоме — «Не встановлено».">
-            {(id) => <input id={id} value={form.publisher} onChange={set('publisher')} />}
+            {(id) => <input id={id} value={form.publisher} onChange={set('publisher')} required maxLength={200} />}
           </Field>
           <Field label="Рік видання" error={fields.publicationYear} hint="Необов’язково. Ціле число, наприклад 2019.">
-            {(id) => <input id={id} inputMode="numeric" value={form.publicationYear} onChange={set('publicationYear')} />}
+            {(id) => <input id={id} type="number" inputMode="numeric" min="1" max={currentKyivYear()} step="1" value={form.publicationYear} onChange={set('publicationYear')} />}
           </Field>
         </div>
         <Field label="ISBN" error={fields.isbn} hint="Необов’язково. ISBN-10 або ISBN-13, дефіси допускаються.">
-          {(id) => <input id={id} value={form.isbn} onChange={set('isbn')} />}
+          {(id) => <input id={id} value={form.isbn} onChange={set('isbn')} maxLength={32} inputMode="numeric" placeholder="978-966-00-0000-0" />}
         </Field>
         <label className="check">
           <input type="checkbox" checked={form.isTextbook} onChange={(e) => setForm((f) => ({ ...f, isTextbook: e.target.checked }))} />

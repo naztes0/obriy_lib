@@ -102,7 +102,7 @@ export function generateReaderTicketPdf(ticket) {
       .text(ticket.fullName, 205, 91, { width: pageWidth - 233, height: 36 });
 
     document.font('NotoSans').fontSize(8).fillColor(muted).text('КЛАС', 28, 143);
-    drawMixedSingleLine(document, ticket.className, 28, 156, {
+    drawMixedSingleLine(document, ticket.className ?? 'Не зазначено', 28, 156, {
       fontSize: 11,
       color: dark,
       bold: true,

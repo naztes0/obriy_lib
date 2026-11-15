@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import api from '../api/client.js';
-import { Badge, Button, ErrorBox, Field, Notice, PageHeader, Spinner } from '../components/ui.jsx';
+import { Badge, Button, ErrorBox, Field, Notice, PageHeader, Pagination, Spinner } from '../components/ui.jsx';
 import { CONDITION, formatDate, todayKyiv } from '../lib/format.js';
 import { useAsync, useDebounced, useSubmit } from '../lib/hooks.js';
 
@@ -13,7 +13,7 @@ async function fetchClassStudents(classId) {
   let page = 1;
   let totalPages = 1;
   do {
-    const { data, meta } = await api.get('/api/v1/readers', { archived: 'active', page, pageSize: 100 });
+    const { data, meta } = await api.get('/api/v1/readers', { archived: 'active', category: 'student', classId, page, pageSize: 100 });
     students.push(...data.filter((r) => r.category === 'student' && r.schoolClass?.id === classId));
     totalPages = meta.totalPages;
     page += 1;
@@ -24,10 +24,11 @@ async function fetchClassStudents(classId) {
 
 function TextbookPicker({ selectedIds, onAdd }) {
   const [query, setQuery] = useState('');
+  const [page, setPage] = useState(1);
   const debounced = useDebounced(query);
   const [busyId, setBusyId] = useState(null);
   const [addError, setAddError] = useState(null);
-  const { data, error, loading, reload } = useAsync(() => api.get('/api/v1/books', { title: debounced, pageSize: 50 }), [debounced]);
+  const { data, meta, error, loading, reload } = useAsync(() => api.get('/api/v1/books', { title: debounced, isTextbook: true, page, pageSize: 25 }), [debounced,page]);
   const textbooks = (data ?? []).filter((b) => b.isTextbook && !selectedIds.includes(b.id));
 
   async function add(book) {
@@ -49,7 +50,7 @@ function TextbookPicker({ selectedIds, onAdd }) {
 
   return (
     <div>
-      <input placeholder="Пошук підручника за назвою" value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Пошук підручника" />
+      <input placeholder="Пошук підручника за назвою" value={query} onChange={(e) => {setQuery(e.target.value);setPage(1);}} aria-label="Пошук підручника" />
       <ErrorBox error={error ?? addError} onRetry={reload} />
       <div className="pick-list" aria-busy={loading}>
         {textbooks.map((b) => (
@@ -57,8 +58,9 @@ function TextbookPicker({ selectedIds, onAdd }) {
             <strong>{b.title}</strong> · {b.authors.map((a) => a.name ?? a).join(', ')} · доступно {b.availableCopies}
           </button>
         ))}
-        {!loading && textbooks.length === 0 && <div className="empty">Підручників (з ознакою «Підручник») не знайдено.</div>}
+        {!loading && textbooks.length === 0 && <div className="empty">На цій сторінці немає нових підручників для вибору.</div>}
       </div>
+      <Pagination meta={meta} onPage={setPage}/>
     </div>
   );
 }
@@ -88,7 +90,8 @@ function ConfirmBar({ payload, onResult, onStale }) {
 }
 
 export default function BatchIssuePage() {
-  const [classId, setClassId] = useState('');
+  const [searchParams] = useSearchParams();
+  const [classId, setClassId] = useState(searchParams.get('classId') ?? '');
   const [dueDate, setDueDate] = useState('');
   const [selected, setSelected] = useState({});
   const [books, setBooks] = useState([]);
@@ -224,7 +227,7 @@ export default function BatchIssuePage() {
             )}
           </Field>
           <Field label="Спільна дата повернення" required hint="Не пізніше закінчення квитка учня.">
-            {(id) => <input id={id} type="date" min={todayKyiv()} value={dueDate} onChange={(e) => { setDueDate(e.target.value); invalidate(); }} />}
+            {(id) => <input id={id} type="date" min={todayKyiv()} required value={dueDate} onChange={(e) => { setDueDate(e.target.value); invalidate(); }} />}
           </Field>
         </div>
       </div>

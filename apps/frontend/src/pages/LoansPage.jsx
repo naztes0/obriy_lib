@@ -25,11 +25,10 @@ export default function LoansPage() {
   const [tab, setTab] = useState('current-loans');
   const [page, setPage] = useState(1);
   const [flash, setFlash] = useState('');
-  const [range, setRange] = useState({ dateFrom: '', dateTo: '' });
 
   const { data, meta, error, loading, reload } = useAsync(
-    () => api.get(`/api/v1/reports/${tab}`, { page, pageSize: 25, ...range }),
-    [tab, page, range],
+    () => api.get(`/api/v1/reports/${tab}`, { page, pageSize: 25 }),
+    [tab, page],
   );
   const summary = meta?.summary;
 
@@ -43,10 +42,6 @@ export default function LoansPage() {
           <button key={t.key} role="tab" aria-selected={tab === t.key} onClick={() => { setTab(t.key); setPage(1); }}>{t.label}</button>
         ))}
       </div>
-      <div className="toolbar">
-        <Field label="Видано з">{(id) => <input id={id} type="date" value={range.dateFrom} onChange={(e) => { setPage(1); setRange({ ...range, dateFrom: e.target.value }); }} />}</Field>
-        <Field label="Видано до">{(id) => <input id={id} type="date" value={range.dateTo} onChange={(e) => { setPage(1); setRange({ ...range, dateTo: e.target.value }); }} />}</Field>
-      </div>
       {summary && <p className="field__hint">Підсумок: {Object.entries(summary).map(([k, v]) => `${SUMMARY_LABELS[k] ?? k}: ${v}`).join(' · ')}</p>}
       <ErrorBox error={error} onRetry={reload} />
       {loading && !data ? <Spinner /> : data?.length === 0 ? <Empty>Записів немає.</Empty> : (
@@ -59,7 +54,7 @@ export default function LoansPage() {
               const status = row.status ?? (tab === 'unresolved-losses' ? 'lost' : undefined);
               return (
                 <tr key={`${loanId ?? row.copy?.id}`}>
-                  <td>{row.book?.title}<div className="field__hint">інв. № {row.copy?.inventoryNumber}</div></td>
+                  <td>{loanId ? <Link to={`/loans/${loanId}`}>{row.book?.title} · №{loanId}</Link> : row.book?.title}<div className="field__hint">інв. № {row.copy?.inventoryNumber}</div></td>
                   <td>
                     {reader ? <Link to={`/readers/${reader.id}`}>{reader.fullName ?? `Читач №${reader.id} — картку видалено`}</Link> : <Badge kind="warn">без відповідального читача</Badge>}
                     {reader?.ticketNumber && <div className="field__hint">{reader.ticketNumber}</div>}
