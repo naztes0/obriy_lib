@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
+import { CalendarDays } from 'lucide-react';
 import api from '../api/client.js';
 import { Badge, Button, ErrorBox, Field, Notice, PageHeader, Pagination, Spinner } from '../components/ui.jsx';
 import { CONDITION, formatDate, todayKyiv } from '../lib/format.js';
@@ -7,6 +8,93 @@ import { useAsync, useDebounced, useSubmit } from '../lib/hooks.js';
 
 const MAX_BATCH = 500;
 const byInventory = (a, b) => a.inventoryNumber.localeCompare(b.inventoryNumber, 'uk', { numeric: true });
+
+function displayDate(value) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value ?? '')) return '';
+  const [year, month, day] = value.split('-');
+  return `${day}.${month}.${year}`;
+}
+
+function parseDisplayDate(value) {
+  const match = /^(\d{2})\.(\d{2})\.(\d{4})$/.exec(value);
+  if (!match) return null;
+  const [, day, month, year] = match;
+  const iso = `${year}-${month}-${day}`;
+  const date = new Date(`${iso}T00:00:00Z`);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toISOString().slice(0, 10) === iso ? iso : null;
+}
+
+function maskDate(value) {
+  const digits = value.replace(/\D/gu, '').slice(0, 8);
+  return [digits.slice(0, 2), digits.slice(2, 4), digits.slice(4, 8)].filter(Boolean).join('.');
+}
+
+function UkrainianDateInput({ id, value, min, onChange }) {
+  const [text, setText] = useState(() => displayDate(value));
+  const [error, setError] = useState('');
+  const nativeRef = useRef(null);
+
+  useEffect(() => setText(displayDate(value)), [value]);
+
+  const commit = (nextText) => {
+    const parsed = parseDisplayDate(nextText);
+    if (!parsed) {
+      onChange('');
+      return false;
+    }
+    if (parsed < min) {
+      setError(`Дата не може бути раніше ${displayDate(min)}.`);
+      onChange('');
+      return false;
+    }
+    setError('');
+    onChange(parsed);
+    return true;
+  };
+
+  return <>
+    <div className={`date-entry${error ? ' date-entry--invalid' : ''}`}>
+      <input
+        id={id}
+        type="text"
+        inputMode="numeric"
+        autoComplete="off"
+        required
+        maxLength={10}
+        placeholder="дд.мм.рррр"
+        value={text}
+        onChange={(event) => {
+          const next = maskDate(event.target.value);
+          setText(next);
+          setError('');
+          commit(next);
+        }}
+        onBlur={() => {
+          if (text && !parseDisplayDate(text)) setError('Вкажіть коректну дату у форматі дд.мм.рррр.');
+          else if (text) commit(text);
+        }}
+      />
+      <button type="button" aria-label="Відкрити календар" onClick={() => nativeRef.current?.showPicker?.()}>
+        <CalendarDays size={18} />
+      </button>
+      <input
+        ref={nativeRef}
+        className="date-entry__native"
+        type="date"
+        min={min}
+        value={value}
+        tabIndex={-1}
+        aria-hidden="true"
+        onChange={(event) => {
+          setError('');
+          onChange(event.target.value);
+        }}
+      />
+    </div>
+    {error && <div className="field__error">{error}</div>}
+  </>;
+}
 
 async function fetchClassStudents(classId) {
   const students = [];
@@ -217,7 +305,7 @@ export default function BatchIssuePage() {
       <div className="card">
         <h2>1. Клас і строк</h2>
         <ErrorBox error={classes.error} onRetry={classes.reload} />
-        <div className="toolbar">
+        <div className="batch-setup-grid">
           <Field label="Клас" required>
             {(id) => (
               <select id={id} value={classId} onChange={(e) => { setClassId(e.target.value); setBooks([]); }}>
@@ -227,7 +315,7 @@ export default function BatchIssuePage() {
             )}
           </Field>
           <Field label="Спільна дата повернення" required hint="Не пізніше закінчення квитка учня.">
-            {(id) => <input id={id} type="date" min={todayKyiv()} required value={dueDate} onChange={(e) => { setDueDate(e.target.value); invalidate(); }} />}
+            {(id) => <UkrainianDateInput id={id} min={todayKyiv()} value={dueDate} onChange={(next) => { setDueDate(next); invalidate(); }} />}
           </Field>
         </div>
       </div>

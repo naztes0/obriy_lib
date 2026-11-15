@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CONDITION, LOAN_STATUS, formatDate, formatDateTime, todayKyiv } from '../lib/format.js';
+import { clearValidationMessage, localizeInvalidEvent } from '../lib/validation.js';
 
 describe('formatDate', () => {
   it('перетворює YYYY-MM-DD у дд.мм.рррр без зсуву часового поясу', () => {
@@ -38,5 +39,24 @@ describe('довідники підписів', () => {
     expect(CONDITION.good).toBe('Добрий');
     expect(CONDITION.worn).toBe('Зношений');
     expect(CONDITION.damaged).toBe('Пошкоджений');
+  });
+});
+
+describe('українські повідомлення перевірки форми', () => {
+  it('пояснює перевищення максимального числа українською', () => {
+    const input = document.createElement('input');
+    input.type = 'number';
+    input.max = '2026';
+    input.value = '20290';
+    localizeInvalidEvent({ target: input });
+    expect(input.validationMessage).toBe('Значення має бути не більше 2026.');
+  });
+
+  it('скидає власне повідомлення після редагування', () => {
+    const input = document.createElement('input');
+    input.required = true;
+    localizeInvalidEvent({ target: input });
+    clearValidationMessage({ target: input });
+    expect(input.validity.customError).toBe(false);
   });
 });

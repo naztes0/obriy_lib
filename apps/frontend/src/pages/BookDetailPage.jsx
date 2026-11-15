@@ -172,7 +172,9 @@ export default function BookDetailPage() {
                   {copy.isArchived && (
                     <>
                       <Button small onClick={() => setModal({ type: 'restoreCopy', copy })} disabled={!isManager || book.isArchived} title={book.isArchived ? 'Спочатку відновіть книгу' : undefined}>Відновити</Button>
-                      <Button small variant="danger" onClick={() => setModal({ type: 'deleteCopy', copy })}>Видалити</Button>
+                      <div className="copy-actions-menu__danger">
+                        <Button small variant="danger" onClick={() => setModal({ type: 'deleteCopy', copy })}>Видалити</Button>
+                      </div>
                     </>
                   )}
                   {!copy.isArchived && (
@@ -181,9 +183,6 @@ export default function BookDetailPage() {
                       <Button small onClick={() => setModal({ type: 'unavailable', copy })}>
                         {copy.isTemporarilyUnavailable ? 'Зробити доступним' : 'Тимчасово недоступний'}
                       </Button>
-                      {!copy.isLost && !copy.availabilityReasons.includes('on_loan') && (
-                        <Button small variant="danger" onClick={() => setModal({ type: 'loss', copy })}>Втрата</Button>
-                      )}
                       {copy.isLost && isManager && (
                         <>
                           <Button small onClick={() => setModal({ type: 'found', copy })}>Знайдено</Button>
@@ -193,13 +192,16 @@ export default function BookDetailPage() {
                       )}
                       <Button small onClick={() => setModal({ type: 'changeBook', copy })}>Змінити видання</Button>
                       <Button small onClick={() => setModal({ type: 'archiveCopy', copy })}>В архів</Button>
-                      <Button small variant="danger" onClick={() => setModal({ type: 'deleteCopy', copy })}>Видалити без історії</Button>
                       {isManager && (
-                        <>
-                          <Button small onClick={() => setModal({ type: 'inventory', copy })}>Інв. №</Button>
-                          <Button small variant="danger" onClick={() => setModal({ type: 'writeOff', copy })}>Списати</Button>
-                        </>
+                        <Button small onClick={() => setModal({ type: 'inventory', copy })}>Інв. №</Button>
                       )}
+                      <div className="copy-actions-menu__danger">
+                        {!copy.isLost && !copy.availabilityReasons.includes('on_loan') && (
+                          <Button small variant="danger" onClick={() => setModal({ type: 'loss', copy })}>Втрата</Button>
+                        )}
+                        <Button small variant="danger" onClick={() => setModal({ type: 'deleteCopy', copy })}>Видалити без історії</Button>
+                        {isManager && <Button small variant="danger" onClick={() => setModal({ type: 'writeOff', copy })}>Списати</Button>}
+                      </div>
                     </>
                   )}
                     </div>

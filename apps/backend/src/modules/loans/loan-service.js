@@ -83,7 +83,6 @@ const ISSUE_ERRORS = {
     'Власний строк можна вказати лише для підручника.',
   ],
   invalid_due_date: [422, 'INVALID_DUE_DATE', 'Строк повернення не може бути в минулому.'],
-  due_date_too_late: [422, 'DUE_DATE_TOO_LATE', 'Строк повернення не може перевищувати один календарний рік.'],
 };
 
 export class LoanService {
@@ -112,7 +111,6 @@ export class LoanService {
         ...values,
         issueDate,
         defaultDueDate: addDays(issueDate, 30),
-        maximumDueDate: `${Number(issueDate.slice(0, 4)) + 1}${issueDate.slice(4)}`,
         actorId: actor.id,
         requestKey,
       });

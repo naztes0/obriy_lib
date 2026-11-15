@@ -17,16 +17,13 @@ export default function IssueLoanModal({ copy: initialCopy, bookId, bookTitle, i
   const [nested, setNested] = useState(null);
   const [refreshError, setRefreshError] = useState(null);
   const action = useCallback((key) => api.post('/api/v1/loans', {
-    readerId: reader.id, copyId: copy.id, readerVersion: reader.version, copyVersion: copy.version, dueDate: dueDate || null,
-  }, key), [reader, copy.id, dueDate]);
+    readerId: reader.id, copyId: copy.id, readerVersion: reader.version, copyVersion: copy.version, dueDate: isTextbook ? dueDate || null : null,
+  }, key), [reader, copy.id, dueDate, isTextbook]);
   const { submit, busy, error, clearError } = useSubmit(action);
   const today = todayKyiv();
   const defaultDate = new Date(`${today}T00:00:00Z`);
   defaultDate.setUTCDate(defaultDate.getUTCDate() + 30);
-  const maximumDate = new Date(`${today}T00:00:00Z`);
-  maximumDate.setUTCFullYear(maximumDate.getUTCFullYear() + 1);
-  const maxDue = maximumDate.toISOString().slice(0, 10);
-  const requestedDue = dueDate || defaultDate.toISOString().slice(0, 10);
+  const requestedDue = (isTextbook && dueDate) || defaultDate.toISOString().slice(0, 10);
   const actualDue = reader?.category === 'student' && reader.ticketExpiresOn < requestedDue ? reader.ticketExpiresOn : requestedDue;
   const readerUnavailable = reader && (reader.isArchived || reader.isBlocked ||
     (reader.category === 'student' && reader.ticketExpiresOn < today) ||
@@ -71,8 +68,8 @@ export default function IssueLoanModal({ copy: initialCopy, bookId, bookTitle, i
           </div>}
           {readerUnavailable && <Notice kind="error">Нову видачу заборонено: перевірте архів, блокування, строк квитка або завершення роботи читача.</Notice>}
           {!copy.isAvailable && <Notice kind="warn">Примірник недоступний. Оновіть його стан або оберіть інший у картці видання.</Notice>}
-          {!review && <Field label={isTextbook ? 'Завершення навчального періоду' : 'Повернути до'} error={error?.fields?.dueDate} hint="Типово — 30 днів. Можна вибрати строк до одного календарного року.">
-            {(id) => <input id={id} type="date" min={today} max={maxDue} value={dueDate} onChange={(e) => setDueDate(e.target.value)} />}
+          {isTextbook && !review && <Field label="Повернути підручник до" error={error?.fields?.dueDate} hint="Без дати — 30 календарних днів. Для навчальної видачі оберіть кінець навчального року.">
+            {(id) => <input id={id} type="date" min={today} value={dueDate} onChange={(e) => setDueDate(e.target.value)} />}
           </Field>}
           {!review && <>
             <p>Фізичний стан: {CONDITION[copy.condition]} {copy.defectDescription}</p>
