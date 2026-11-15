@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { Button, ErrorBox, Field } from '../components/ui.jsx';
+import { clearValidationMessage, localizeInvalidEvent } from '../lib/validation.js';
 
 export default function LoginPage() {
   const { staff, login } = useAuth();
@@ -29,7 +30,7 @@ export default function LoginPage() {
   }
 
   return (
-    <form className="card login" onSubmit={onSubmit}>
+    <form className="card login" onSubmit={onSubmit} onInvalid={localizeInvalidEvent} onInput={clearValidationMessage}>
       <h1>Бібліотека «Обрій»</h1>
       <ErrorBox error={error} />
       <Field label="Логін" error={error?.fields?.login} required>

@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../api/client.js';
 import { Button, ErrorBox, Field, Modal, Notice } from '../components/ui.jsx';
@@ -17,6 +17,23 @@ export default function BookFormModal({ book, onClose, onSaved }) {
     isTextbook: book?.isTextbook ?? false,
   });
   const [confirmDuplicate, setConfirmDuplicate] = useState(false);
+  const [activeAuthor, setActiveAuthor] = useState(null);
+  const [authorSuggestions, setAuthorSuggestions] = useState([]);
+
+  useEffect(() => {
+    if (activeAuthor === null || form.authors[activeAuthor].trim().length < 2) { setAuthorSuggestions([]); return undefined; }
+    let current = true;
+    const query = form.authors[activeAuthor].trim();
+    const timer = setTimeout(async () => {
+      try {
+        const result = await api.get('/api/v1/books', { author: query, page: 1, pageSize: 25 });
+        const names = [...new Set((result.data ?? []).flatMap((item) => item.authors ?? []).map((a) => a.name ?? a)
+          .filter((name) => name.toLocaleLowerCase('uk-UA').includes(query.toLocaleLowerCase('uk-UA'))))];
+        if (current) setAuthorSuggestions(names.slice(0, 8));
+      } catch { if (current) setAuthorSuggestions([]); }
+    }, 250);
+    return () => { current = false; clearTimeout(timer); };
+  }, [activeAuthor, form.authors]);
 
   const action = useCallback(async () => {
     const body = {
@@ -87,12 +104,17 @@ export default function BookFormModal({ book, onClose, onSaved }) {
         </Field>
         <fieldset className={`author-editor${fields.authors ? ' author-editor--invalid' : ''}`}>
           <legend>Автори <span className="field__req">*</span></legend>
-          <p className="field__hint">Окремий запис для кожного автора; порядок відповідає полю <code>book_authors.position</code> у БД.</p>
+          <p className="field__hint">Введіть нового автора або оберіть наявного зі списку. Порядок авторів можна змінювати стрілками.</p>
           {form.authors.map((author, index) => (
             <div className="author-row" key={index}>
               <span className="author-row__number">{index + 1}</span>
-              <input aria-label={`Автор ${index + 1}`} value={author} onChange={(e) => setAuthor(index, e.target.value)}
-                required maxLength={200} placeholder="Прізвище та ім’я автора" autoFocus={index === 0} />
+              <div className="author-input-wrap" onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setActiveAuthor(null); }}>
+                <input aria-label={`Автор ${index + 1}`} value={author} onFocus={() => setActiveAuthor(index)} onChange={(e) => { setAuthor(index, e.target.value); setActiveAuthor(index); }}
+                  required maxLength={200} placeholder="Прізвище та ім’я автора" autoFocus={index === 0} autoComplete="off" />
+                {activeAuthor === index && authorSuggestions.length > 0 && <div className="author-suggestions">
+                  {authorSuggestions.map((name) => <button type="button" key={name} onClick={() => { setAuthor(index, name); setActiveAuthor(null); }}>{name}</button>)}
+                </div>}
+              </div>
               <Button small onClick={() => moveAuthor(index, -1)} disabled={index === 0} aria-label="Перемістити вище">↑</Button>
               <Button small onClick={() => moveAuthor(index, 1)} disabled={index === form.authors.length - 1} aria-label="Перемістити нижче">↓</Button>
               <Button small variant="danger" onClick={() => removeAuthor(index)} disabled={form.authors.length === 1} aria-label="Видалити автора">×</Button>

@@ -368,3 +368,30 @@ kbd { padding: 2px 5px; border: 1px solid #d7dfdd; border-radius: 5px; backgroun
 [data-theme="dark"] .command-menu__results button { color: #dfe8e5; }
 [data-theme="dark"] .command-menu__results button:hover, [data-theme="dark"] .command-menu__results button:focus { background: #1c2e2a; }
 [data-theme="dark"] .login { background: #151d1c; }
+
+/* Focused selectors and compact contextual actions */
+.reader-picker__control { display: flex; align-items: center; gap: 10px; }
+.reader-picker__control input { flex: 1; }
+.author-input-wrap { position: relative; flex: 1; min-width: 180px; }
+.author-input-wrap > input { width: 100%; }
+.author-suggestions { position: absolute; z-index: 8; top: calc(100% + 5px); left: 0; right: 0; overflow: hidden; border: 1px solid var(--line-strong); border-radius: 12px; background: var(--surface); box-shadow: 0 16px 32px rgba(16,36,32,.18); }
+.author-suggestions button { display: block; width: 100%; padding: 10px 12px; border: 0; border-bottom: 1px solid var(--line); background: transparent; color: var(--text); text-align: left; cursor: pointer; }
+.author-suggestions button:hover, .author-suggestions button:focus { background: var(--primary-soft); }
+.copy-actions-menu { position: relative; z-index: 1; }
+.copy-actions-menu[open] { z-index: 50; }
+tr:has(.copy-actions-menu[open]), td:has(.copy-actions-menu[open]) { position: relative; z-index: 40; }
+.copy-actions-menu > summary { list-style: none; cursor: pointer; }
+.copy-actions-menu > summary::-webkit-details-marker { display: none; }
+.copy-actions-menu__panel { position: absolute; z-index: 60; isolation: isolate; right: 0; bottom: calc(100% + 6px); display: grid; gap: 6px; width: max-content; min-width: 220px; max-width: 290px; max-height: min(420px,calc(100vh - 120px)); overflow-y: auto; overscroll-behavior: contain; padding: 8px; border: 1px solid var(--line-strong); border-radius: 14px; background: var(--surface); box-shadow: 0 18px 40px rgba(16,36,32,.28); scrollbar-width: thin; }
+.copy-actions-menu__panel:focus-within { outline: 2px solid color-mix(in srgb,var(--primary) 45%,transparent); outline-offset: 2px; }
+.copy-actions-menu:is(:last-child) { z-index: 11; }
+.copy-actions-menu__panel .btn { justify-content: flex-start; width: 100%; }
+.command-menu__results button span { display: grid; gap: 2px; min-width: 0; text-align: left; }
+.command-menu__results button small { overflow: hidden; color: var(--muted); font-size: 12px; font-weight: 400; text-overflow: ellipsis; white-space: nowrap; }
+.section-panel__body, .section-panel > p { margin: 0; padding: 18px 20px; }
+.section-panel .toolbar + p, .section-panel .toolbar + .row-muted { margin: 0; padding: 16px 20px; }
+[data-theme="dark"] .author-suggestions, [data-theme="dark"] .copy-actions-menu__panel { border-color: #3a4945; background: #151d1c; }
+
+@media (min-width: 821px) {
+  table:has(.copy-actions-menu) { overflow: visible; }
+}

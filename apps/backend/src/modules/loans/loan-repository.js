@@ -109,7 +109,7 @@ export class LoanRepository {
     };
   }
 
-  async issueLoan({ readerId, copyId, readerVersion, copyVersion, issueDate, defaultDueDate, dueDate: requestedDueDate, actorId, requestKey }) {
+  async issueLoan({ readerId, copyId, readerVersion, copyVersion, issueDate, defaultDueDate, maximumDueDate, dueDate: requestedDueDate, actorId, requestKey }) {
     const client = await this.pool.connect();
     const operation = 'issue_loan';
     try {
@@ -177,12 +177,9 @@ export class LoanRepository {
         [copyId],
       );
       if (openLoan.rowCount) return await this.rollbackStatus(client, 'copy_on_loan');
-      if (requestedDueDate && !copyRow.is_textbook) {
-        return await this.rollbackStatus(client, 'custom_due_date_not_allowed');
-      }
-
       let dueDate = requestedDueDate ?? defaultDueDate;
       if (dueDate < issueDate) return await this.rollbackStatus(client, 'invalid_due_date');
+      if (dueDate > maximumDueDate) return await this.rollbackStatus(client, 'due_date_too_late');
       if (readerRow.category === 'student' && ticketExpiresOn < dueDate) dueDate = ticketExpiresOn;
 
       const result = await client.query(

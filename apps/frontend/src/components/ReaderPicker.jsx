@@ -7,6 +7,7 @@ import { ErrorBox, Pagination } from './ui.jsx';
 export default function ReaderPicker({ value, onChange }) {
   const [query, setQuery] = useState('');
   const [page, setPage] = useState(1);
+  const [open, setOpen] = useState(!value);
   const debounced = useDebounced(query);
   const { data, meta, error, loading, reload } = useAsync(
     () => api.get('/api/v1/readers', { q: debounced, page, pageSize: 8 }),
@@ -15,14 +16,18 @@ export default function ReaderPicker({ value, onChange }) {
 
   return (
     <div>
+      <div className="reader-picker__control">
       <input
         placeholder="ПІБ або номер квитка"
         value={query}
-        onChange={(e) => { setQuery(e.target.value); setPage(1); }}
+        onFocus={() => setOpen(true)}
+        onChange={(e) => { setQuery(e.target.value); setPage(1); setOpen(true); }}
         aria-label="Пошук читача"
       />
+      {value && <button className="btn btn--small" type="button" onClick={() => setOpen((v) => !v)}>{open ? 'Згорнути' : 'Змінити'}</button>}
+      </div>
       <ErrorBox error={error} onRetry={reload} />
-      <div className="pick-list" aria-busy={loading}>
+      {open && <div className="pick-list" aria-busy={loading}>
         {(data ?? []).map((reader) => {
           const expired = reader.category === 'student' && reader.ticketExpiresOn < todayKyiv();
           const ended = reader.employmentEndedOn && reader.employmentEndedOn <= todayKyiv();
@@ -33,7 +38,7 @@ export default function ReaderPicker({ value, onChange }) {
               key={reader.id}
               aria-pressed={value?.id === reader.id}
               disabled={disabled}
-              onClick={() => onChange(reader)}
+              onClick={() => { onChange(reader); setQuery(reader.fullName); setOpen(false); }}
             >
               <strong>{reader.fullName}</strong> · {reader.ticketNumber} · {CATEGORY[reader.category]}
               {reader.schoolClass ? `, ${reader.schoolClass.name}` : ''}
@@ -45,8 +50,8 @@ export default function ReaderPicker({ value, onChange }) {
           );
         })}
         {!loading && data?.length === 0 && <div className="empty">Читачів не знайдено.</div>}
-      </div>
-      <Pagination meta={meta} onPage={setPage} />
+      </div>}
+      {open && <Pagination meta={meta} onPage={setPage} />}
     </div>
   );
 }

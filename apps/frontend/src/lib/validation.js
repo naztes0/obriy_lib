@@ -23,3 +23,23 @@ export function uniqueNonEmpty(values) {
     return true;
   });
 }
+
+export function localizeInvalidEvent(event) {
+  const field = event.target;
+  if (typeof field?.setCustomValidity !== 'function' || field.validity?.valid) return;
+  const { validity } = field;
+  let message = 'Перевірте правильність значення.';
+  if (validity.valueMissing) message = 'Заповніть це поле.';
+  else if (validity.rangeOverflow) message = `Значення має бути не більше ${field.max}.`;
+  else if (validity.rangeUnderflow) message = `Значення має бути не менше ${field.min}.`;
+  else if (validity.tooLong) message = `Введіть не більше ${field.maxLength} символів.`;
+  else if (validity.tooShort) message = `Введіть щонайменше ${field.minLength} символи.`;
+  else if (validity.patternMismatch) message = field.title || 'Значення не відповідає потрібному формату.';
+  else if (validity.typeMismatch) message = 'Введіть значення у правильному форматі.';
+  else if (validity.stepMismatch || validity.badInput) message = 'Введіть коректне числове значення.';
+  field.setCustomValidity(message);
+}
+
+export function clearValidationMessage(event) {
+  if (typeof event.target?.setCustomValidity === 'function') event.target.setCustomValidity('');
+}

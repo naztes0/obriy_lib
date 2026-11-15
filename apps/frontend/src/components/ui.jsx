@@ -90,7 +90,7 @@ export function Modal({ title, onClose, children, wide, busy = false }) {
   }, []);
 
   return (
-    <div className="modal-backdrop" onMouseDown={(e) => !busy && e.target === e.currentTarget && onClose()}>
+    <div className="modal-backdrop">
       <div
         className={`modal${wide ? ' modal--wide' : ''}`}
         role="dialog"

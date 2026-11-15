@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import api from '../api/client.js';
 import { useAuth } from '../auth/AuthContext.jsx';
@@ -74,6 +74,7 @@ export default function BookDetailPage() {
   const { isManager } = useAuth();
   const { data: book, error, loading, reload } = useAsync(() => api.get(`/api/v1/books/${bookId}`), [bookId]);
   const [modal, setModal] = useState(null);
+  const [openCopyMenuId, setOpenCopyMenuId] = useState(null);
   const [flash, setFlash] = useState('');
   const close = () => setModal(null);
   const done = (message) => () => {
@@ -81,6 +82,14 @@ export default function BookDetailPage() {
     setFlash(message);
     reload();
   };
+
+  useEffect(() => {
+    const closeMenu = (event) => {
+      if (!event.target.closest?.('.copy-actions-menu')) setOpenCopyMenuId(null);
+    };
+    document.addEventListener('pointerdown', closeMenu);
+    return () => document.removeEventListener('pointerdown', closeMenu);
+  }, []);
 
   if (loading && !book) return <Spinner />;
   if (error && !book) return <ErrorBox error={error} onRetry={reload} />;
@@ -148,6 +157,18 @@ export default function BookDetailPage() {
                 <div className="actions">
                   <Button small variant="primary" disabled={!copy.isAvailable} onClick={() => setModal({ type: 'issue', copy })}>Видати</Button>
                   <Button small onClick={() => setModal({ type: 'history', copy })}>Історія</Button>
+                  <details
+                    className="copy-actions-menu"
+                    open={openCopyMenuId === copy.id}
+                    onToggle={(event) => {
+                      if (event.currentTarget.open) setOpenCopyMenuId(copy.id);
+                      else setOpenCopyMenuId((current) => current === copy.id ? null : current);
+                    }}
+                  >
+                    <summary className="btn btn--small">Ще ···</summary>
+                    <div className="copy-actions-menu__panel" onClick={(event) => {
+                      if (event.target.closest?.('button')) setOpenCopyMenuId(null);
+                    }}>
                   {copy.isArchived && (
                     <>
                       <Button small onClick={() => setModal({ type: 'restoreCopy', copy })} disabled={!isManager || book.isArchived} title={book.isArchived ? 'Спочатку відновіть книгу' : undefined}>Відновити</Button>
@@ -181,6 +202,8 @@ export default function BookDetailPage() {
                       )}
                     </>
                   )}
+                    </div>
+                  </details>
                 </div>
               </td>
             </tr>

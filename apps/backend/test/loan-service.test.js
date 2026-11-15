@@ -29,6 +29,7 @@ test('loan issue calculates the thirtieth calendar day and passes idempotency da
     dueDate: null,
     issueDate: '2026-11-03',
     defaultDueDate: '2026-12-03',
+    maximumDueDate: '2027-11-03',
     actorId: '1',
     requestKey: 'issue-request-1',
   });

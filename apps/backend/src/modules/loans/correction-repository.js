@@ -40,9 +40,11 @@ export class CorrectionRepository {
             LEFT JOIN school_classes sc ON sc.id=rpd.class_id WHERE reader_id=$1 FOR UPDATE OF rpd`, [targetReader]);
           if (!reader.rowCount) fail('READER_NOT_FOUND', 'Читача не знайдено.', 404);
           const person = reader.rows[0];
-          const due = await db.query(`SELECT ($1::date < (now() AT TIME ZONE 'Europe/Kyiv')::date) AS expired`, [person.ticket_expires_on]);
+          const due = await db.query(`SELECT ($1::date < (now() AT TIME ZONE 'Europe/Kyiv')::date) AS expired,
+            ($2::date IS NOT NULL AND $2::date <= (now() AT TIME ZONE 'Europe/Kyiv')::date) AS employment_ended`,
+          [person.ticket_expires_on, person.employment_ended_on]);
           if (person.archived_at || (person.category === 'student' && (due.rows[0].expired || person.ticket_expires_on < loan.current_due_date)) ||
-            (person.employment_ended_on && person.employment_ended_on <= new Date())) fail('READER_UNAVAILABLE', 'Читач або його квиток не дозволяє цю видачу.');
+            due.rows[0].employment_ended) fail('READER_UNAVAILABLE', 'Читач або його квиток не дозволяє цю видачу.');
           const blocks = await db.query('SELECT 1 FROM reader_blocks WHERE reader_id=$1 AND resolved_at IS NULL AND annulled_at IS NULL', [targetReader]);
           if (blocks.rowCount) fail('READER_BLOCKED', 'Читача заблоковано.');
           const copies = await db.query(`SELECT bc.*,b.archived_at AS book_archived_at FROM book_copies bc JOIN books b ON b.id=bc.book_id

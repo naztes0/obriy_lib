@@ -1,6 +1,6 @@
 # Локальний запуск
 
-Код: F:\uni\ГП\obriy_lib, гілка frontend.
+Гілка: `frontend`. Команди нижче виконуються з кореня репозиторію.
 
 - Frontend: http://127.0.0.1:5174
 - Backend: http://127.0.0.1:3000/health
@@ -17,7 +17,6 @@
 Запустити Docker Desktop, потім у PowerShell:
 
 ```powershell
-cd 'F:\uni\ГП\obriy_lib'
 docker start obriy-lib-postgres
 pnpm.cmd dev:backend
 ```
@@ -25,7 +24,6 @@ pnpm.cmd dev:backend
 В іншому терміналі:
 
 ```powershell
-cd 'F:\uni\ГП\obriy_lib'
 pnpm.cmd --filter @obriy/frontend exec vite --host 127.0.0.1 --port 5174 --strictPort
 ```
 
@@ -39,4 +37,4 @@ pnpm.cmd test
 pnpm.cmd build:frontend
 ```
 
-Результат 15.11.2026: frontend 19/19, backend 136/136, build успішний. Усі 9 міграцій застосовано.
+Результат 16.11.2026: frontend 24/24; backend 139 пройдено, 1 інтеграційний пропущено; build успішний. У репозиторії 13 міграцій.

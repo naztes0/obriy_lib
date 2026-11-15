@@ -5,7 +5,9 @@ import {
   Menu, Moon, PanelLeftClose, PanelLeftOpen, School, Search, ShieldAlert, Sun, UserCog, Users, X,
 } from 'lucide-react';
 import { useAuth } from '../auth/AuthContext.jsx';
+import api from '../api/client.js';
 import { ROLE } from '../lib/format.js';
+import { clearValidationMessage, localizeInvalidEvent } from '../lib/validation.js';
 import PendingRequests from './PendingRequests.jsx';
 
 const navigation = [
@@ -25,6 +27,8 @@ export default function Layout() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [commandOpen, setCommandOpen] = useState(false);
   const [query, setQuery] = useState('');
+  const [globalResults, setGlobalResults] = useState({ books: [], readers: [] });
+  const [searching, setSearching] = useState(false);
   const [theme, setTheme] = useState(() => {
     const saved = localStorage.getItem('obriy-theme');
     if (saved === 'light' || saved === 'dark') return saved;
@@ -55,6 +59,24 @@ export default function Layout() {
     return () => document.removeEventListener('keydown', onKey);
   }, []);
 
+  useEffect(() => {
+    const text = query.trim();
+    if (text.length < 2) { setGlobalResults({ books: [], readers: [] }); setSearching(false); return undefined; }
+    let current = true;
+    const timer = setTimeout(async () => {
+      setSearching(true);
+      try {
+        const [books, readers] = await Promise.all([
+          api.get('/api/v1/books', { title: text, page: 1, pageSize: 5 }),
+          api.get('/api/v1/readers', { q: text, page: 1, pageSize: 5 }),
+        ]);
+        if (current) setGlobalResults({ books: books.data ?? [], readers: readers.data ?? [] });
+      } catch { if (current) setGlobalResults({ books: [], readers: [] }); }
+      finally { if (current) setSearching(false); }
+    }, 250);
+    return () => { current = false; clearTimeout(timer); };
+  }, [query]);
+
   const go = (to) => {
     navigate(to);
     setCommandOpen(false);
@@ -63,7 +85,7 @@ export default function Layout() {
   };
 
   return (
-    <div className={`app-shell${collapsed ? ' app-shell--collapsed' : ''}${mobileOpen ? ' app-shell--mobile-open' : ''}`}>
+    <div className={`app-shell${collapsed ? ' app-shell--collapsed' : ''}${mobileOpen ? ' app-shell--mobile-open' : ''}`} onInvalid={localizeInvalidEvent} onInput={clearValidationMessage}>
       <header className="mobile-bar">
         <button type="button" className="icon-btn" onClick={() => setMobileOpen(true)} aria-label="Відкрити меню"><Menu size={20} /></button>
         <div className="brand brand--mobile"><span>О</span><strong>Обрій</strong></div>
@@ -131,13 +153,20 @@ export default function Layout() {
       {commandOpen && (
         <div className="command-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setCommandOpen(false)}>
           <div className="command-menu" role="dialog" aria-modal="true" aria-label="Швидкий перехід">
-            <div className="command-menu__input"><Search size={19} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Введіть назву розділу…" autoFocus /><kbd>Esc</kbd></div>
-            <div className="command-menu__label">Перейти до</div>
+            <div className="command-menu__input"><Search size={19} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Читач, книга або розділ…" autoFocus /><kbd>Esc</kbd></div>
+            <div className="command-menu__label">{query.trim().length >= 2 ? 'Результати пошуку' : 'Перейти до'}</div>
             <div className="command-menu__results">
+              {globalResults.readers.map((reader) => (
+                <button type="button" key={`reader-${reader.id}`} onClick={() => go(`/readers/${reader.id}`)}><Users size={18} /><span><strong>{reader.fullName}</strong><small>{reader.ticketNumber}</small></span><Command size={13} /></button>
+              ))}
+              {globalResults.books.map((book) => (
+                <button type="button" key={`book-${book.id}`} onClick={() => go(`/books/${book.id}`)}><BookOpen size={18} /><span><strong>{book.title}</strong><small>{book.authors?.map((a) => a.name ?? a).join(', ')}</small></span><Command size={13} /></button>
+              ))}
               {matches.map(({ to, label, icon: Icon }) => (
                 <button type="button" key={to} onClick={() => go(to)}><Icon size={18} /><span>{label}</span><Command size={13} /></button>
               ))}
-              {matches.length === 0 && <div className="command-menu__empty">Розділ не знайдено</div>}
+              {searching && <div className="command-menu__empty">Шукаємо…</div>}
+              {!searching && matches.length === 0 && globalResults.books.length === 0 && globalResults.readers.length === 0 && <div className="command-menu__empty">Нічого не знайдено</div>}
             </div>
           </div>
         </div>
