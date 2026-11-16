@@ -77,9 +77,19 @@ export class ReaderService {
       });
     }
 
+    const category = searchParams.get('category');
+    const classId = searchParams.get('classId');
+    if (category !== null && !['student', 'employee'].includes(category)) {
+      throw new AppError(400, 'INVALID_QUERY', 'Некоректна категорія читача.');
+    }
+    if (classId !== null && !/^[1-9][0-9]*$/.test(classId)) {
+      throw new AppError(400, 'INVALID_QUERY', 'Некоректний клас.');
+    }
     const result = await this.repository.listReaders({
       query: query || null,
       archived,
+      ...(category !== null ? { category } : {}),
+      ...(classId !== null ? { classId } : {}),
       pageSize: pagination.pageSize,
       offset: pagination.offset,
     });
@@ -120,7 +130,6 @@ export class ReaderService {
     if (
       ticket.category !== 'student' ||
       ticket.ticketType !== 'electronic' ||
-      !ticket.className ||
       !ticket.ticketIssuedOn ||
       !ticket.ticketExpiresOn
     ) {
@@ -181,6 +190,7 @@ export class ReaderService {
   /** @returns {Promise<object>} Оновлена картка зі збереженою історією змін. */
   async updateReader(readerId, input, actor) {
     const existing = await this.getReader(readerId);
+    if (input?.version !== undefined && String(input.version) !== String(existing.version)) throw versionConflict();
     const update = validateReaderUpdate(input, existing);
     const nameChanged =
       normalizeComparableName(update.values.fullName) !== normalizeComparableName(existing.fullName);
@@ -228,7 +238,9 @@ export class ReaderService {
         actorId: actor.id,
         reason: update.reason,
         expectedTicketNumber: existing.ticketNumber,
+        expectedVersion: existing.version,
       });
+      if (result.status === 'version_conflict') throw versionConflict();
       if (result.status === 'not_found') {
         throw new AppError(404, 'READER_NOT_FOUND', 'Читача не знайдено.');
       }

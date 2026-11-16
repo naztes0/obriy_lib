@@ -107,7 +107,8 @@ function validateValues(values, { creating }) {
   }
 
   if (values.category === 'student') {
-    result.classId = readId(values.classId, 'classId', errors);
+    result.classId = values.classId == null || values.classId === ''
+      ? null : readId(values.classId, 'classId', errors);
     if (!isValidDate(values.ticketExpiresOn)) {
       errors.ticketExpiresOn = 'Вкажіть коректну дату у форматі YYYY-MM-DD.';
     } else {

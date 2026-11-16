@@ -48,6 +48,7 @@ function versionConflict() {
 }
 
 const ISSUE_ERRORS = {
+  state_changed: [409, 'VERSION_CONFLICT', 'Дані читача або примірника змінилися. Оновіть їх і повторно підтвердьте стан та строк.'],
   reader_not_found: [404, 'READER_NOT_FOUND', 'Читача не знайдено.'],
   reader_archived: [422, 'READER_ARCHIVED', 'Архівному читачеві не можна видати примірник.'],
   ticket_expired: [422, 'READER_TICKET_EXPIRED', 'Строк учнівського квитка завершився.'],

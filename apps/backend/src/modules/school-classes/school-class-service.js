@@ -15,6 +15,13 @@ function duplicateNameError() {
  * Керує єдиним довідником класів ліцею.
  */
 export class SchoolClassService {
+  async remove(classId,input) {
+    validateClassId(classId);
+    if (input?.confirm !== true) throw new AppError(400,'CONFIRMATION_REQUIRED','Підтвердьте вилучення класу.');
+    try { await this.repository.remove(classId); }
+    catch (e) { if (e.code==='23503') throw new AppError(409,'CLASS_IN_USE','Клас має пов’язані записи. Спочатку переведіть учнів або очистьте їхній клас.'); throw e; }
+    return {id:classId,deleted:true};
+  }
   constructor(repository) {
     this.repository = repository;
   }

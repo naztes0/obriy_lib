@@ -87,8 +87,8 @@ const LOAN_REPORT_ROWS = `SELECT l.id, l.status, l.issued_at, l.current_due_date
 
 const LOSS_ROWS = `SELECT bc.id AS copy_id, bc.inventory_number, bc.condition,
                           b.id AS book_id, b.title,
-                          l.id AS loan_id, l.reader_id, l.reader_category_snapshot,
-                          l.class_name_snapshot, rpd.full_name, rpd.ticket_number,
+                          l.id AS loan_id, l.reader_id, rpd.category AS reader_category_snapshot,
+                          sc.name AS class_name_snapshot, rpd.full_name, rpd.ticket_number,
                           r.personal_data_deleted_at,
                           loss_event.kind AS loss_kind,
                           loss_event.occurred_at AS loss_recorded_at
@@ -97,6 +97,7 @@ const LOSS_ROWS = `SELECT bc.id AS copy_id, bc.inventory_number, bc.condition,
                    LEFT JOIN loans l ON l.copy_id = bc.id AND l.status = 'lost'
                    LEFT JOIN readers r ON r.id = l.reader_id
                    LEFT JOIN reader_personal_data rpd ON rpd.reader_id = l.reader_id
+                   LEFT JOIN school_classes sc ON sc.id = rpd.class_id
                    LEFT JOIN LATERAL (
                      SELECT bce.kind, bce.occurred_at
                      FROM book_copy_events bce
@@ -105,7 +106,11 @@ const LOSS_ROWS = `SELECT bc.id AS copy_id, bc.inventory_number, bc.condition,
                      ORDER BY bce.occurred_at DESC, bce.id DESC
                      LIMIT 1
                    ) loss_event ON true
-                   WHERE bc.is_lost = true`;
+                   WHERE bc.is_lost = true
+                     AND NOT EXISTS (SELECT 1 FROM book_copy_events settled WHERE settled.copy_id=bc.id
+                       AND settled.kind='loss_settled' AND settled.occurred_at >= loss_event.occurred_at)
+                     AND NOT EXISTS (SELECT 1 FROM loans compensated WHERE compensated.copy_id=bc.id
+                       AND compensated.status='compensated' AND compensated.compensated_at >= loss_event.occurred_at)`;
 
 const BLOCK_ROWS = `SELECT rb.id, rb.reason_code, rb.confirmed_at, rb.minimum_until,
                            rb.is_indefinite, rb.resolved_at, rb.annulled_at, rb.version,
@@ -248,24 +253,26 @@ export class ReportRepository {
     const values = [];
     const conditions = [`l.status = 'issued'`];
     if (overdue) conditions.push(`l.current_due_date < ${addValue(values, today)}::date`);
-    addPeriodFilters(conditions, values, 'l.issued_at', filters);
     addReaderSnapshotFilters(
       conditions,
       values,
       filters,
-      'l.reader_category_snapshot',
-      'l.class_name_snapshot',
+      'rpd.category',
+      'sc.name',
     );
     const where = `WHERE ${conditions.join(' AND ')}`;
     const summaryResult = await db.query(
       `SELECT count(*) AS total, count(DISTINCT l.reader_id) AS readers
-       FROM loans l ${where}`,
+       FROM loans l
+       LEFT JOIN reader_personal_data rpd ON rpd.reader_id = l.reader_id
+       LEFT JOIN school_classes sc ON sc.id = rpd.class_id ${where}`,
       values,
     );
     const limit = addValue(values, pageSize);
     const skip = addValue(values, offset);
     const result = await db.query(
-      `${LOAN_REPORT_ROWS}
+      `${LOAN_REPORT_ROWS.replace('l.reader_category_snapshot, l.class_name_snapshot', 'rpd.category AS reader_category_snapshot, sc.name AS class_name_snapshot')}
+       LEFT JOIN school_classes sc ON sc.id = rpd.class_id
        ${where}
        ORDER BY l.current_due_date, l.id
        LIMIT ${limit} OFFSET ${skip}`,
@@ -285,7 +292,6 @@ export class ReportRepository {
   async losses({ filters, pageSize, offset }, db) {
     const values = [];
     const conditions = [];
-    addPeriodFilters(conditions, values, 'loss_recorded_at', filters);
     addReaderSnapshotFilters(
       conditions,
       values,
@@ -293,7 +299,7 @@ export class ReportRepository {
       'reader_category_snapshot',
       'class_name_snapshot',
     );
-    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    const where = conditions.length ? `WHERE loan_id IS NULL OR (${conditions.join(' AND ')})` : '';
     const summaryResult = await db.query(
       `WITH losses AS (${LOSS_ROWS})
        SELECT count(*) AS total,

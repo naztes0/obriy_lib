@@ -100,6 +100,10 @@ function buildFilters(filters) {
 
   if (filters.archived === 'active') conditions.push('b.archived_at IS NULL');
   if (filters.archived === 'archived') conditions.push('b.archived_at IS NOT NULL');
+  if (typeof filters.isTextbook === 'boolean') {
+    values.push(filters.isTextbook);
+    conditions.push(`b.is_textbook = $${values.length}`);
+  }
 
   return {
     where: conditions.length ? `WHERE ${conditions.join(' AND ')}` : '',
