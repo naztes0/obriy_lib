@@ -15,9 +15,13 @@ import { registerHealthRoutes } from './modules/health/health-routes.js';
 import { LoanRepository } from './modules/loans/loan-repository.js';
 import { registerLoanRoutes } from './modules/loans/loan-routes.js';
 import { LoanService } from './modules/loans/loan-service.js';
+import { CorrectionRepository } from './modules/loans/correction-repository.js';
+import { CorrectionService } from './modules/loans/correction-service.js';
 import { ReaderRepository } from './modules/readers/reader-repository.js';
 import { registerReaderRoutes } from './modules/readers/reader-routes.js';
 import { ReaderService } from './modules/readers/reader-service.js';
+import { HistoryRepository } from './modules/readers/history-repository.js';
+import { HistoryService } from './modules/readers/history-service.js';
 import { ReportRepository } from './modules/reports/report-repository.js';
 import { registerReportRoutes } from './modules/reports/report-routes.js';
 import { ReportService } from './modules/reports/report-service.js';
@@ -63,6 +67,8 @@ export function createApp({ pool, config = {}, logger = console, services = {} }
   const schoolClassService =
     services.schoolClassService ?? new SchoolClassService(new SchoolClassRepository(pool));
   const readerService = services.readerService ?? new ReaderService(new ReaderRepository(pool));
+  const historyService =
+    services.historyService ?? new HistoryService(new HistoryRepository(pool));
   const restrictionService =
     services.restrictionService ?? new RestrictionService(new RestrictionRepository(pool));
   const loanService =
@@ -75,6 +81,8 @@ export function createApp({ pool, config = {}, logger = console, services = {} }
     new TextbookBatchService(new TextbookBatchRepository(pool));
   const reportService = services.reportService ?? new ReportService(new ReportRepository(pool));
   const staffService = services.staffService ?? new StaffService(new StaffRepository(pool));
+  const correctionService =
+    services.correctionService ?? new CorrectionService(new CorrectionRepository(pool));
 
   const router = new Router();
   registerHealthRoutes(router, { pool, logger });
@@ -87,10 +95,10 @@ export function createApp({ pool, config = {}, logger = console, services = {} }
   registerCopyRoutes(router, { authService, copyService });
   registerSchoolClassRoutes(router, { authService, schoolClassService });
   registerReaderRoutes(router, { authService, readerService });
-  registerHistoryRoutes(router, { authService, pool });
-  registerRestrictionRoutes(router, { authService, restrictionService, pool });
+  registerHistoryRoutes(router, { authService, historyService });
+  registerRestrictionRoutes(router, { authService, restrictionService });
   registerLoanRoutes(router, { authService, loanService });
-  registerCorrectionRoutes(router, { authService, pool });
+  registerCorrectionRoutes(router, { authService, correctionService });
   registerTextbookBatchRoutes(router, { authService, textbookBatchService });
   registerReportRoutes(router, { authService, reportService });
   registerStaffRoutes(router, { authService, staffService });

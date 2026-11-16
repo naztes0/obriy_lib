@@ -1,21 +1,11 @@
 import { readJsonBody } from '../../http/request-body.js';
 import { sendData } from '../../http/response.js';
 import { requireAuthentication, requireRole } from '../auth/auth-guard.js';
-import { readPagination } from '../../http/pagination.js';
 
-export function registerRestrictionRoutes(router, { authService, restrictionService, pool }) {
+export function registerRestrictionRoutes(router, { authService, restrictionService }) {
   router.get('/api/v1/restrictions', requireAuthentication(authService, async ({ searchParams, response, requestId }) => {
-    const pagination = readPagination(searchParams);
-    const pending = searchParams.get('pending') === 'true';
-    const where = `rb.resolved_at IS NULL AND rb.annulled_at IS NULL ${pending ? 'AND EXISTS (SELECT 1 FROM reader_unblock_requests ur WHERE ur.block_id=rb.id AND ur.decision IS NULL)' : ''}`;
-    const count = await pool.query(`SELECT count(*) FROM reader_blocks rb WHERE ${where}`);
-    const result = await pool.query(`SELECT rb.id::text,rb.reader_id::text AS "readerId",rpd.full_name AS "fullName",rpd.ticket_number AS "ticketNumber",
-      rb.reason_code AS "reasonCode",rb.minimum_until::text AS "minimumUntil",rb.is_indefinite AS "isIndefinite",
-      EXISTS(SELECT 1 FROM reader_unblock_requests ur WHERE ur.block_id=rb.id AND ur.decision IS NULL) AS "hasPendingRequest"
-      FROM reader_blocks rb LEFT JOIN reader_personal_data rpd ON rpd.reader_id=rb.reader_id WHERE ${where}
-      ORDER BY "hasPendingRequest" DESC,rb.confirmed_at,rb.id LIMIT $1 OFFSET $2`,[pagination.pageSize,pagination.offset]);
-    const totalItems=Number(count.rows[0].count);
-    sendData(response,200,result.rows,requestId,{page:pagination.page,pageSize:pagination.pageSize,totalItems,totalPages:Math.ceil(totalItems/pagination.pageSize)});
+    const result = await restrictionService.listActive(searchParams);
+    sendData(response, 200, result.data, requestId, result.meta);
   }));
   router.get(
     '/api/v1/readers/:readerId/blocks',

@@ -1,4 +1,5 @@
 import { AppError } from '../../http/app-error.js';
+import { readPagination } from '../../http/pagination.js';
 import {
   validateBlockAnnulment,
   validateBlockConfirmation,
@@ -60,6 +61,24 @@ export class RestrictionService {
   constructor(repository, { now = () => new Date() } = {}) {
     this.repository = repository;
     this.now = now;
+  }
+
+  async listActive(searchParams) {
+    const pagination = readPagination(searchParams);
+    const result = await this.repository.listActive({
+      pending: searchParams.get('pending') === 'true',
+      pageSize: pagination.pageSize,
+      offset: pagination.offset,
+    });
+    return {
+      data: result.items,
+      meta: {
+        page: pagination.page,
+        pageSize: pagination.pageSize,
+        totalItems: result.totalItems,
+        totalPages: Math.ceil(result.totalItems / pagination.pageSize),
+      },
+    };
   }
 
   /** @returns {Promise<object[]>} Історія блокувань і запитів читача. */

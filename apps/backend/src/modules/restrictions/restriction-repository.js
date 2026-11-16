@@ -142,6 +142,34 @@ export class RestrictionRepository {
     this.pool = pool;
   }
 
+  async listActive({ pending, pageSize, offset }) {
+    const pendingFilter = pending
+      ? `AND EXISTS (
+           SELECT 1 FROM reader_unblock_requests rur
+           WHERE rur.block_id = rb.id AND rur.decision = 'pending'
+         )`
+      : '';
+    const where = `rb.resolved_at IS NULL AND rb.annulled_at IS NULL ${pendingFilter}`;
+    const count = await this.pool.query(`SELECT count(*) FROM reader_blocks rb WHERE ${where}`);
+    const result = await this.pool.query(
+      `SELECT rb.id::text, rb.reader_id::text AS "readerId",
+              rpd.full_name AS "fullName", rpd.ticket_number AS "ticketNumber",
+              rb.reason_code AS "reasonCode", rb.minimum_until::text AS "minimumUntil",
+              rb.is_indefinite AS "isIndefinite",
+              EXISTS(
+                SELECT 1 FROM reader_unblock_requests rur
+                WHERE rur.block_id = rb.id AND rur.decision = 'pending'
+              ) AS "hasPendingRequest"
+       FROM reader_blocks rb
+       LEFT JOIN reader_personal_data rpd ON rpd.reader_id = rb.reader_id
+       WHERE ${where}
+       ORDER BY "hasPendingRequest" DESC, rb.confirmed_at, rb.id
+       LIMIT $1 OFFSET $2`,
+      [pageSize, offset],
+    );
+    return { items: result.rows, totalItems: Number(count.rows[0].count) };
+  }
+
   async listReaderBlocks(readerId) {
     const reader = await this.pool.query('SELECT id FROM readers WHERE id = $1', [readerId]);
     if (!reader.rowCount) return null;
