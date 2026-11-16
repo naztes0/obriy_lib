@@ -19,11 +19,21 @@ function compilePath(pattern) {
   };
 }
 
+/**
+ * Мінімальний маршрутизатор HTTP із параметрами шляху та підтримкою GET, POST і PATCH.
+ */
 export class Router {
   constructor() {
     this.routes = [];
   }
 
+  /**
+   * Реєструє маршрут.
+   * @param {string} method HTTP-метод.
+   * @param {string} pattern Шаблон на зразок `/api/v1/books/:bookId`.
+   * @param {Function} handler Асинхронний обробник маршруту.
+   * @returns {Router} Поточний router для ланцюжка викликів.
+   */
   add(method, pattern, handler) {
     const { expression, parameterNames } = compilePath(pattern);
     this.routes.push({ method: method.toUpperCase(), pattern, expression, parameterNames, handler });
@@ -42,6 +52,14 @@ export class Router {
     return this.add('PATCH', pattern, handler);
   }
 
+  /**
+   * Знаходить маршрут, декодує параметри й викликає його обробник.
+   * @param {object} request HTTP-запит.
+   * @param {object} response HTTP-відповідь.
+   * @param {object} context Спільний контекст, зокрема requestId.
+   * @returns {Promise<void>}
+   * @throws {AppError} Для невідомого маршруту, методу або некоректного параметра.
+   */
   async handle(request, response, context) {
     const url = new URL(request.url, 'http://localhost');
     const pathMatches = [];

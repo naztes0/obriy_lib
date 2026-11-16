@@ -51,6 +51,9 @@ function versionConflict() {
   );
 }
 
+/**
+ * Керує картками учнів і працівників, квитками, архівом та знеособленням.
+ */
 export class ReaderService {
   constructor(repository, { now = () => new Date(), ticketPdf = generateReaderTicketPdf } = {}) {
     this.repository = repository;
@@ -58,6 +61,7 @@ export class ReaderService {
     this.ticketPdf = ticketPdf;
   }
 
+  /** @returns {Promise<object>} Сторінка читачів після пошуку та фільтрації. */
   async listReaders(searchParams) {
     const pagination = readPagination(searchParams);
     const query = searchParams.get('q')?.trim() ?? '';
@@ -90,6 +94,7 @@ export class ReaderService {
     };
   }
 
+  /** @returns {Promise<object>} Картка читача з поточними видачами й історією. */
   async getReader(readerId) {
     validateReaderId(readerId);
     const reader = await this.repository.findById(readerId);
@@ -97,6 +102,7 @@ export class ReaderService {
     return reader;
   }
 
+  /** @returns {Promise<{buffer: Buffer, filename: string}>} Готовий PDF електронного квитка. */
   async getElectronicTicketPdf(readerId) {
     validateReaderId(readerId);
     const ticket = await this.repository.findTicketByReaderId(readerId);
@@ -139,6 +145,7 @@ export class ReaderService {
     if (matches.length && !confirmed) throw namesakeError(matches);
   }
 
+  /** @returns {Promise<object>} Створена картка читача. */
   async createReader(input, actor) {
     const { values, confirmNamesake } = validateReaderCreate(input);
     await this.checkNamesakes(values.fullName, { confirmed: confirmNamesake });
@@ -171,6 +178,7 @@ export class ReaderService {
     throw ticketNumberExistsError();
   }
 
+  /** @returns {Promise<object>} Оновлена картка зі збереженою історією змін. */
   async updateReader(readerId, input, actor) {
     const existing = await this.getReader(readerId);
     const update = validateReaderUpdate(input, existing);
@@ -243,6 +251,7 @@ export class ReaderService {
     }
   }
 
+  /** @returns {Promise<object>} Архівована картка без відкритих зобов'язань. */
   async archiveReader(readerId, input, actor, idempotencyKey) {
     validateReaderId(readerId);
     const values = validateReaderArchive(input);
@@ -269,6 +278,7 @@ export class ReaderService {
     return await this.getReader(result.readerId);
   }
 
+  /** @returns {Promise<object>} Відновлена незнеособлена картка. */
   async restoreReader(readerId, input, actor, idempotencyKey) {
     validateReaderId(readerId);
     const values = validateReaderRestore(input);
@@ -301,6 +311,7 @@ export class ReaderService {
     return await this.getReader(result.readerId);
   }
 
+  /** @returns {Promise<object>} Працівник після зміни дати звільнення та можливої анонімізації. */
   async setEmploymentEnd(readerId, input, actor) {
     validateReaderId(readerId);
     const values = validateEmploymentEnd(input);
@@ -333,6 +344,7 @@ export class ReaderService {
     return await this.getReader(readerId);
   }
 
+  /** @returns {Promise<object|null>} Результат знеособлення одного придатного читача. */
   async anonymizeReaderIfEligible(readerId) {
     validateReaderId(readerId);
     const results = await this.repository.anonymizeEligibleReaders({
@@ -342,6 +354,7 @@ export class ReaderService {
     return results[0] ?? null;
   }
 
+  /** @returns {Promise<object[]>} Усі картки, знеособлені під час поточного запуску job. */
   async anonymizeEligibleReaders() {
     const results = await this.repository.anonymizeEligibleReaders({
       today: todayInKyiv(this.now()),

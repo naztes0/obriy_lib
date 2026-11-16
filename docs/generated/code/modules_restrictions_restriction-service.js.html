@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: modules/restrictions/restriction-service.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: modules/restrictions/restriction-service.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>import { AppError } from '../../http/app-error.js';
+import {
+  validateBlockAnnulment,
+  validateBlockConfirmation,
+  validateRestrictionIdempotencyKey,
+  validateUnblock,
+  validateUnblockDecision,
+  validateUnblockRequest,
+} from './restriction-input.js';
+
+function validateId(value, code) {
+  if (!/^[1-9][0-9]*$/.test(value)) {
+    throw new AppError(400, code, 'Некоректний ідентифікатор.');
+  }
+}
+
+function todayInKyiv(now) {
+  const parts = new Intl.DateTimeFormat('en', {
+    timeZone: 'Europe/Kyiv',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(now);
+  const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${value.year}-${value.month}-${value.day}`;
+}
+
+function versionConflict() {
+  return new AppError(
+    409,
+    'VERSION_CONFLICT',
+    'Запис уже змінився. Оновіть дані та повторіть дію.',
+  );
+}
+
+const COMMON_ERRORS = {
+  block_not_found: [404, 'READER_BLOCK_NOT_FOUND', 'Блокування не знайдено.'],
+  block_not_active: [422, 'READER_BLOCK_NOT_ACTIVE', 'Блокування вже не є активним.'],
+  indefinite_block: [
+    422,
+    'INDEFINITE_BLOCK_CANNOT_BE_RESOLVED',
+    'Безстрокове блокування не підлягає звичайному розблокуванню.',
+  ],
+  minimum_period: [
+    422,
+    'BLOCK_MINIMUM_PERIOD_NOT_ENDED',
+    'Мінімальний 30-денний строк блокування ще не завершився.',
+  ],
+  grounds_remain: [
+    422,
+    'BLOCK_GROUNDS_REMAIN',
+    'Спочатку усуньте всі прострочення та неврегульовані втрати.',
+  ],
+};
+
+/**
+ * Керує підтвердженими блокуваннями читачів і погодженням розблокування.
+ */
+export class RestrictionService {
+  constructor(repository, { now = () => new Date() } = {}) {
+    this.repository = repository;
+    this.now = now;
+  }
+
+  /** @returns {Promise&lt;object[]>} Історія блокувань і запитів читача. */
+  async listReaderBlocks(readerId) {
+    validateId(readerId, 'INVALID_READER_ID');
+    const blocks = await this.repository.listReaderBlocks(readerId);
+    if (blocks === null) throw new AppError(404, 'READER_NOT_FOUND', 'Читача не знайдено.');
+    return blocks;
+  }
+
+  /** @returns {Promise&lt;object>} Створене блокування за підтвердженим порушенням. */
+  async confirmBlock(readerId, input, actor, idempotencyKey) {
+    validateId(readerId, 'INVALID_READER_ID');
+    const values = validateBlockConfirmation(input);
+    const requestKey = validateRestrictionIdempotencyKey(idempotencyKey);
+    const result = await this.repository.confirmBlock(readerId, {
+      ...values,
+      today: todayInKyiv(this.now()),
+      actorId: actor.id,
+      requestKey,
+    });
+    const errors = {
+      reader_not_found: [404, 'READER_NOT_FOUND', 'Читача не знайдено.'],
+      loan_not_found: [404, 'LOAN_NOT_FOUND', 'Видачу не знайдено.'],
+      loan_reader_mismatch: [
+        422,
+        'LOAN_READER_MISMATCH',
+        'Вказана видача не належить цьому читачеві.',
+      ],
+      already_blocked: [409, 'READER_ALREADY_BLOCKED', 'Читач уже має активне блокування.'],
+      ground_not_reached: [
+        422,
+        'BLOCK_GROUND_NOT_REACHED',
+        'Видача ще не відповідає вибраній підставі блокування.',
+      ],
+    };
+    this.throwMapped(result.status, errors);
+    return await this.getBlock(result.blockId);
+  }
+
+  /** @returns {Promise&lt;object>} Запит бібліотекаря на розблокування. */
+  async createUnblockRequest(blockId, input, actor, idempotencyKey) {
+    validateId(blockId, 'INVALID_READER_BLOCK_ID');
+    const values = validateUnblockRequest(input);
+    const requestKey = validateRestrictionIdempotencyKey(idempotencyKey);
+    const result = await this.repository.createUnblockRequest(blockId, {
+      ...values,
+      actorId: actor.id,
+      requestKey,
+    });
+    const errors = {
+      ...COMMON_ERRORS,
+      request_exists: [
+        409,
+        'UNBLOCK_REQUEST_ALREADY_EXISTS',
+        'Для цього блокування вже є нерозглянутий запит.',
+      ],
+    };
+    this.throwMapped(result.status, errors);
+    return await this.getBlock(result.blockId);
+  }
+
+  /** @returns {Promise&lt;object>} Блокування, закрите завідувачем. */
+  async unblockDirectly(blockId, input, actor, idempotencyKey) {
+    validateId(blockId, 'INVALID_READER_BLOCK_ID');
+    const values = validateUnblock(input);
+    const requestKey = validateRestrictionIdempotencyKey(idempotencyKey);
+    const result = await this.repository.unblockDirectly(blockId, {
+      ...values,
+      today: todayInKyiv(this.now()),
+      actorId: actor.id,
+      requestKey,
+    });
+    if (result.status === 'version_conflict') throw versionConflict();
+    this.throwMapped(result.status, COMMON_ERRORS);
+    return await this.getBlock(result.blockId);
+  }
+
+  /** @returns {Promise&lt;object>} Результат схвалення або відхилення запиту. */
+  async decideUnblockRequest(requestId, input, actor, idempotencyKey) {
+    validateId(requestId, 'INVALID_UNBLOCK_REQUEST_ID');
+    const values = validateUnblockDecision(input);
+    const requestKey = validateRestrictionIdempotencyKey(idempotencyKey);
+    const result = await this.repository.decideUnblockRequest(requestId, {
+      ...values,
+      today: todayInKyiv(this.now()),
+      actorId: actor.id,
+      requestKey,
+    });
+    if (result.status === 'version_conflict') throw versionConflict();
+    const errors = {
+      ...COMMON_ERRORS,
+      request_not_found: [404, 'UNBLOCK_REQUEST_NOT_FOUND', 'Запит не знайдено.'],
+      request_decided: [422, 'UNBLOCK_REQUEST_ALREADY_DECIDED', 'Запит уже розглянуто.'],
+    };
+    this.throwMapped(result.status, errors);
+    return await this.getBlock(result.blockId);
+  }
+
+  /** @returns {Promise&lt;object>} Анульоване помилкове блокування з аудитом. */
+  async annulBlock(blockId, input, actor, idempotencyKey) {
+    validateId(blockId, 'INVALID_READER_BLOCK_ID');
+    const values = validateBlockAnnulment(input);
+    const requestKey = validateRestrictionIdempotencyKey(idempotencyKey);
+    const result = await this.repository.annulBlock(blockId, {
+      ...values,
+      actorId: actor.id,
+      requestKey,
+    });
+    if (result.status === 'version_conflict') throw versionConflict();
+    const errors = {
+      block_not_found: COMMON_ERRORS.block_not_found,
+      already_annulled: [422, 'READER_BLOCK_ALREADY_ANNULLED', 'Блокування вже анульовано.'],
+    };
+    this.throwMapped(result.status, errors);
+    return await this.getBlock(result.blockId);
+  }
+
+  async getBlock(blockId) {
+    const block = await this.repository.findBlockById(blockId);
+    if (!block) throw new AppError(404, 'READER_BLOCK_NOT_FOUND', 'Блокування не знайдено.');
+    return block;
+  }
+
+  throwMapped(status, errors) {
+    if (!errors[status]) return;
+    const [httpStatus, code, message] = errors[status];
+    throw new AppError(httpStatus, code, message);
+  }
+}
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="AppError.html">AppError</a></li><li><a href="AuthService.html">AuthService</a></li><li><a href="CatalogService.html">CatalogService</a></li><li><a href="CopyService.html">CopyService</a></li><li><a href="HealthService.html">HealthService</a></li><li><a href="ImportService.html">ImportService</a></li><li><a href="LoanService.html">LoanService</a></li><li><a href="ReaderService.html">ReaderService</a></li><li><a href="ReportService.html">ReportService</a></li><li><a href="RestrictionService.html">RestrictionService</a></li><li><a href="Router.html">Router</a></li><li><a href="SchoolClassService.html">SchoolClassService</a></li><li><a href="StaffService.html">StaffService</a></li><li><a href="TextbookBatchService.html">TextbookBatchService</a></li></ul><h3>Global</h3><ul><li><a href="global.html#createApp">createApp</a></li><li><a href="global.html#createPool">createPool</a></li><li><a href="global.html#generateReaderTicketPdf">generateReaderTicketPdf</a></li><li><a href="global.html#loadConfig">loadConfig</a></li><li><a href="global.html#startReaderAnonymizationJob">startReaderAnonymizationJob</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a>
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

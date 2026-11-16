@@ -17,6 +17,9 @@ function publicStaff(account) {
   };
 }
 
+/**
+ * Керує входом, перевіркою та завершенням cookie-сесій працівників.
+ */
 export class AuthService {
   constructor(repository, { sessionTtlMilliseconds, now = () => new Date() }) {
     this.repository = repository;
@@ -24,6 +27,11 @@ export class AuthService {
     this.now = now;
   }
 
+  /**
+   * Перевіряє облікові дані й створює нову випадкову сесію.
+   * @param {{login: string, password: string}} credentials Логін і пароль.
+   * @returns {Promise<{staff: object, token: string, expiresAt: string}>} Працівник і відкритий токен для cookie.
+   */
   async login({ login, password }) {
     const normalizedLogin = typeof login === 'string' ? login.trim() : '';
     const validPasswordShape = typeof password === 'string' && password.length >= 1 && password.length <= 256;
@@ -50,6 +58,11 @@ export class AuthService {
     return { token, expiresAt, staff: publicStaff(account) };
   }
 
+  /**
+   * Перевіряє токен сесії та активність працівника.
+   * @param {string} token Значення cookie `obriy_session`.
+   * @returns {Promise<object|null>} Поточний працівник або `null`.
+   */
   async authenticateToken(token) {
     if (typeof token !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(token)) {
       throw new AppError(401, 'AUTHENTICATION_REQUIRED', 'Увійдіть у систему.');
@@ -63,6 +76,11 @@ export class AuthService {
     return publicStaff(session);
   }
 
+  /**
+   * Відкликає поточну сесію.
+   * @param {string} token Значення cookie сесії.
+   * @returns {Promise<void>}
+   */
   async logout(token) {
     if (typeof token === 'string' && /^[A-Za-z0-9_-]{43}$/.test(token)) {
       await this.repository.revokeSession(hashToken(token));

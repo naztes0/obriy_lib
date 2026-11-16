@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: http/router.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: http/router.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>import { AppError } from './app-error.js';
+
+function compilePath(pattern) {
+  const parameterNames = [];
+  const segments = pattern.split('/').filter(Boolean);
+  const source = segments
+    .map((segment) => {
+      if (segment.startsWith(':')) {
+        parameterNames.push(segment.slice(1));
+        return '([^/]+)';
+      }
+      return segment.replace(/[.*+?^${}()|[\]\\]/g, '\\$&amp;');
+    })
+    .join('/');
+
+  return {
+    expression: new RegExp(`^/${source}/?$`),
+    parameterNames,
+  };
+}
+
+/**
+ * Мінімальний маршрутизатор HTTP із параметрами шляху та підтримкою GET, POST і PATCH.
+ */
+export class Router {
+  constructor() {
+    this.routes = [];
+  }
+
+  /**
+   * Реєструє маршрут.
+   * @param {string} method HTTP-метод.
+   * @param {string} pattern Шаблон на зразок `/api/v1/books/:bookId`.
+   * @param {Function} handler Асинхронний обробник маршруту.
+   * @returns {Router} Поточний router для ланцюжка викликів.
+   */
+  add(method, pattern, handler) {
+    const { expression, parameterNames } = compilePath(pattern);
+    this.routes.push({ method: method.toUpperCase(), pattern, expression, parameterNames, handler });
+    return this;
+  }
+
+  get(pattern, handler) {
+    return this.add('GET', pattern, handler);
+  }
+
+  post(pattern, handler) {
+    return this.add('POST', pattern, handler);
+  }
+
+  patch(pattern, handler) {
+    return this.add('PATCH', pattern, handler);
+  }
+
+  /**
+   * Знаходить маршрут, декодує параметри й викликає його обробник.
+   * @param {object} request HTTP-запит.
+   * @param {object} response HTTP-відповідь.
+   * @param {object} context Спільний контекст, зокрема requestId.
+   * @returns {Promise&lt;void>}
+   * @throws {AppError} Для невідомого маршруту, методу або некоректного параметра.
+   */
+  async handle(request, response, context) {
+    const url = new URL(request.url, 'http://localhost');
+    const pathMatches = [];
+
+    for (const route of this.routes) {
+      const match = route.expression.exec(url.pathname);
+      if (!match) continue;
+
+      pathMatches.push(route);
+      if (route.method !== request.method) continue;
+
+      let params;
+      try {
+        params = Object.fromEntries(
+          route.parameterNames.map((name, index) => [name, decodeURIComponent(match[index + 1])]),
+        );
+      } catch {
+        throw new AppError(400, 'INVALID_PATH', 'Некоректний параметр у адресі запиту.');
+      }
+
+      await route.handler({ ...context, request, response, params, searchParams: url.searchParams });
+      return;
+    }
+
+    if (pathMatches.length > 0) {
+      const allowedMethods = [...new Set(pathMatches.map((route) => route.method))].sort();
+      throw new AppError(405, 'METHOD_NOT_ALLOWED', 'Цей метод не підтримується для вказаного маршруту.', {
+        allowedMethods,
+      });
+    }
+
+    throw new AppError(404, 'NOT_FOUND', 'Маршрут не знайдено.');
+  }
+}
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="AppError.html">AppError</a></li><li><a href="AuthService.html">AuthService</a></li><li><a href="CatalogService.html">CatalogService</a></li><li><a href="CopyService.html">CopyService</a></li><li><a href="HealthService.html">HealthService</a></li><li><a href="ImportService.html">ImportService</a></li><li><a href="LoanService.html">LoanService</a></li><li><a href="ReaderService.html">ReaderService</a></li><li><a href="ReportService.html">ReportService</a></li><li><a href="RestrictionService.html">RestrictionService</a></li><li><a href="Router.html">Router</a></li><li><a href="SchoolClassService.html">SchoolClassService</a></li><li><a href="StaffService.html">StaffService</a></li><li><a href="TextbookBatchService.html">TextbookBatchService</a></li></ul><h3>Global</h3><ul><li><a href="global.html#createApp">createApp</a></li><li><a href="global.html#createPool">createPool</a></li><li><a href="global.html#generateReaderTicketPdf">generateReaderTicketPdf</a></li><li><a href="global.html#loadConfig">loadConfig</a></li><li><a href="global.html#startReaderAnonymizationJob">startReaderAnonymizationJob</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a>
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

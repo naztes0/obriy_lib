@@ -2,6 +2,12 @@ import pg from 'pg';
 
 const { Pool } = pg;
 
+/**
+ * Створює пул підключень PostgreSQL за `DATABASE_URL`.
+ *
+ * @returns {object} Пул із максимально десятьма з'єднаннями.
+ * @throws {Error} Якщо `DATABASE_URL` не задано.
+ */
 export function createPool() {
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) {

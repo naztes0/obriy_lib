@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="uk">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Обрій API · Swagger UI</title>
+  <link rel="stylesheet" href="./swagger-ui.css">
+  <style>body{margin:0;background:#f5f8f7}.topbar{display:none}.swagger-ui .info .title{color:#075e58}.swagger-ui .opblock-tag{font-family:system-ui,sans-serif}</style>
+</head>
+<body>
+  <div id="swagger-ui"></div>
+  <script src="./swagger-ui-bundle.js"></script>
+  <script src="./swagger-ui-standalone-preset.js"></script>
+  <script>
+    SwaggerUIBundle({
+      url: './openapi.json',
+      dom_id: '#swagger-ui',
+      deepLinking: true,
+      displayRequestDuration: true,
+      filter: true,
+      validatorUrl: null,
+      supportedSubmitMethods: [],
+      presets: [SwaggerUIBundle.presets.apis, SwaggerUIStandalonePreset],
+      layout: 'BaseLayout'
+    });
+  </script>
+</body>
+</html>

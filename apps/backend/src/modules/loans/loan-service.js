@@ -84,6 +84,10 @@ const ISSUE_ERRORS = {
   invalid_due_date: [422, 'INVALID_DUE_DATE', 'Строк повернення не може бути в минулому.'],
 };
 
+/**
+ * Виконує життєвий цикл видачі: видачу, повернення, продовження, втрату,
+ * компенсацію та виправлення помилкових операцій.
+ */
 export class LoanService {
   constructor(
     repository,
@@ -94,6 +98,7 @@ export class LoanService {
     this.afterObligationClosed = afterObligationClosed;
   }
 
+  /** @returns {Promise<object>} Видача з поточним статусом та аудитом. */
   async getLoan(loanId) {
     validateLoanId(loanId);
     const loan = await this.repository.findById(loanId);
@@ -101,6 +106,13 @@ export class LoanService {
     return loan;
   }
 
+  /**
+   * Видає доступний примірник активному читачеві.
+   * @param {object} input ReaderId, copyId і необов'язкова dueDate підручника.
+   * @param {object} actor Працівник-виконавець.
+   * @param {string} idempotencyKey Ключ захисту від дублювання.
+   * @returns {Promise<object>} Створена видача.
+   */
   async issueLoan(input, actor, idempotencyKey) {
     const values = validateLoanIssue(input);
     const requestKey = validateIdempotencyKey(idempotencyKey);
@@ -130,6 +142,7 @@ export class LoanService {
     }
   }
 
+  /** @returns {Promise<object>} Завершена видача зі станом поверненого примірника. */
   async returnLoan(loanId, input, actor, idempotencyKey) {
     validateLoanId(loanId);
     const values = validateLoanReturn(input);
@@ -155,6 +168,7 @@ export class LoanService {
     return await this.getLoan(result.loanId);
   }
 
+  /** @returns {Promise<object>} Видача з новим строком повернення. */
   async extendLoan(loanId, input, actor, idempotencyKey) {
     validateLoanId(loanId);
     const values = validateLoanExtension(input);
@@ -202,6 +216,7 @@ export class LoanService {
     return await this.getLoan(result.loanId);
   }
 
+  /** @returns {Promise<object>} Видача у незавершеному статусі `lost`. */
   async markLoanLost(loanId, input, actor, idempotencyKey) {
     validateLoanId(loanId);
     const values = validateLoanStatusChange(input);
@@ -221,6 +236,7 @@ export class LoanService {
     return await this.getLoan(result.loanId);
   }
 
+  /** @returns {Promise<object>} Видача у завершеному статусі `compensated`. */
   async compensateLoan(loanId, input, actor, idempotencyKey) {
     validateLoanId(loanId);
     const values = validateLoanStatusChange(input);
@@ -242,6 +258,7 @@ export class LoanService {
     return await this.getLoan(result.loanId);
   }
 
+  /** @returns {Promise<object>} Знайдений примірник, повернений до фонду. */
   async markCopyFound(copyId, input, actor, idempotencyKey) {
     validateCopyId(copyId);
     const values = validateCopyFound(input);
@@ -268,6 +285,7 @@ export class LoanService {
     return await this.repository.findCopyById(result.copyId);
   }
 
+  /** @returns {Promise<object>} Видача після аудованого виправлення статусу. */
   async correctLoanStatus(loanId, input, actor, idempotencyKey) {
     validateLoanId(loanId);
     const values = validateLoanCorrection(input);
@@ -308,6 +326,7 @@ export class LoanService {
     return loan;
   }
 
+  /** @returns {Promise<object>} Примірник після фіксації помилкового повернення. */
   async recordErroneousReturn(loanId, input, actor, idempotencyKey) {
     validateLoanId(loanId);
     const values = validateErroneousReturn(input);

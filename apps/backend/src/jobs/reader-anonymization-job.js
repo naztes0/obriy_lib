@@ -1,5 +1,15 @@
 const DAY_IN_MILLISECONDS = 24 * 60 * 60 * 1000;
 
+/**
+ * Запускає початкову й періодичну перевірку читачів, придатних до знеособлення.
+ *
+ * @param {object} readerService Сервіс читачів.
+ * @param {Console} [logger=console] Logger службових помилок.
+ * @param {object} [options] Налаштування планувальника.
+ * @param {number} [options.intervalMilliseconds=86400000] Інтервал, типово одна доба.
+ * @param {Function} [options.schedule=setInterval] Функція планування для тестів.
+ * @returns {{run: Function, stop: Function}} Керування job.
+ */
 export function startReaderAnonymizationJob(
   readerService,
   { logger = console, intervalMilliseconds = DAY_IN_MILLISECONDS } = {},

@@ -30,12 +30,16 @@ function assertPackageState(result) {
   }
 }
 
+/**
+ * Перевіряє та атомарно оформлює масову видачу підручників класу.
+ */
 export class TextbookBatchService {
   constructor(repository, { now = () => new Date() } = {}) {
     this.repository = repository;
     this.now = now;
   }
 
+  /** @returns {Promise<object>} Preview з результатом кожного рядка без запису в БД. */
   async previewBatch(input) {
     const values = validateTextbookBatch(input);
     const issueDate = dateInKyiv(this.now());
@@ -51,6 +55,7 @@ export class TextbookBatchService {
     return result.preview;
   }
 
+  /** @returns {Promise<object>} Створений пакет і всі його окремі видачі. */
   async createBatch(input, actor, idempotencyKey) {
     const values = validateTextbookBatch(input);
     const requestKey = validateBatchIdempotencyKey(idempotencyKey);
@@ -91,6 +96,7 @@ export class TextbookBatchService {
     return { ...batch, wasRepeated: result.status === 'repeated' };
   }
 
+  /** @returns {Promise<object>} Пакет масової видачі за ідентифікатором. */
   async getBatch(batchId) {
     validateBatchId(batchId);
     const batch = await this.repository.findBatchById(batchId);

@@ -1,0 +1,27 @@
+{
+  "source": {
+    "include": [
+      "apps/backend/src"
+    ],
+    "includePattern": ".+\\.js$",
+    "excludePattern": "(^|\\/|\\\\)(test|migrations|scripts)(\\/|\\\\)"
+  },
+  "plugins": [
+    "plugins/markdown"
+  ],
+  "opts": {
+    "destination": "docs/generated/code",
+    "encoding": "utf8",
+    "recurse": true,
+    "readme": "docs/jsdoc-home.md",
+    "template": "node_modules/jsdoc/templates/default"
+  },
+  "templates": {
+    "default": {
+      "includeDate": false,
+      "outputSourceFiles": true,
+      "useLongnameInNav": true
+    }
+  }
+}
+

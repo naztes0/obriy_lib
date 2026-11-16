@@ -11,11 +11,15 @@ function duplicateNameError() {
   return new AppError(409, 'CLASS_NAME_EXISTS', 'Клас із такою назвою вже існує.');
 }
 
+/**
+ * Керує єдиним довідником класів ліцею.
+ */
 export class SchoolClassService {
   constructor(repository) {
     this.repository = repository;
   }
 
+  /** @returns {Promise<object[]>} Класи відповідного стану активності. */
   async list(searchParams) {
     const status = searchParams.get('status') ?? 'active';
     if (!['active', 'inactive', 'all'].includes(status)) {
@@ -26,6 +30,7 @@ export class SchoolClassService {
     return this.repository.list({ status });
   }
 
+  /** @returns {Promise<object>} Створений клас. */
   async create(input) {
     const { name } = validateClassName(input);
     try {
@@ -38,6 +43,7 @@ export class SchoolClassService {
     }
   }
 
+  /** @returns {Promise<object>} Перейменований клас. */
   async rename(classId, input) {
     validateClassId(classId);
     const { name } = validateClassName(input);
@@ -53,6 +59,7 @@ export class SchoolClassService {
     }
   }
 
+  /** @returns {Promise<object>} Клас після зміни активності. */
   async setActive(classId, input) {
     validateClassId(classId);
     const { isActive } = validateClassActivity(input);

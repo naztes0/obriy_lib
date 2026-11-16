@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: modules/textbook-batches/textbook-batch-service.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: modules/textbook-batches/textbook-batch-service.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>import { AppError } from '../../http/app-error.js';
+import {
+  validateBatchIdempotencyKey,
+  validateTextbookBatch,
+} from './textbook-batch-input.js';
+
+function dateInKyiv(now) {
+  const parts = new Intl.DateTimeFormat('en', {
+    timeZone: 'Europe/Kyiv',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(now);
+  const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${value.year}-${value.month}-${value.day}`;
+}
+
+function validateBatchId(batchId) {
+  if (!/^[1-9][0-9]*$/.test(batchId)) {
+    throw new AppError(400, 'INVALID_BATCH_ID', 'Некоректний ідентифікатор пакета.');
+  }
+}
+
+function assertPackageState(result) {
+  if (result.status === 'class_not_found') {
+    throw new AppError(404, 'CLASS_NOT_FOUND', 'Клас не знайдено.');
+  }
+  if (result.status === 'class_inactive') {
+    throw new AppError(422, 'CLASS_INACTIVE', 'Неактивний клас не можна використати у видачі.');
+  }
+}
+
+/**
+ * Перевіряє та атомарно оформлює масову видачу підручників класу.
+ */
+export class TextbookBatchService {
+  constructor(repository, { now = () => new Date() } = {}) {
+    this.repository = repository;
+    this.now = now;
+  }
+
+  /** @returns {Promise&lt;object>} Preview з результатом кожного рядка без запису в БД. */
+  async previewBatch(input) {
+    const values = validateTextbookBatch(input);
+    const issueDate = dateInKyiv(this.now());
+    if (values.dueDate &lt; issueDate) {
+      throw new AppError(
+        422,
+        'INVALID_DUE_DATE',
+        'Спільний строк повернення не може бути в минулому.',
+      );
+    }
+    const result = await this.repository.previewBatch({ ...values, issueDate });
+    assertPackageState(result);
+    return result.preview;
+  }
+
+  /** @returns {Promise&lt;object>} Створений пакет і всі його окремі видачі. */
+  async createBatch(input, actor, idempotencyKey) {
+    const values = validateTextbookBatch(input);
+    const requestKey = validateBatchIdempotencyKey(idempotencyKey);
+    const existingBatchId = await this.repository.findBatchIdByRequest(actor.id, requestKey);
+    if (existingBatchId !== null) {
+      const batch = await this.getBatch(existingBatchId);
+      return { ...batch, wasRepeated: true };
+    }
+    const issueDate = dateInKyiv(this.now());
+    if (values.dueDate &lt; issueDate) {
+      throw new AppError(
+        422,
+        'INVALID_DUE_DATE',
+        'Спільний строк повернення не може бути в минулому.',
+      );
+    }
+    const result = await this.repository.createBatch(
+      { ...values, issueDate },
+      { actorId: actor.id, requestKey },
+    );
+    assertPackageState(result);
+    if (result.status === 'validation_failed') {
+      throw new AppError(
+        422,
+        'BATCH_VALIDATION_FAILED',
+        'Пакет змінився або містить недоступні рядки.',
+        result.preview,
+      );
+    }
+    if (result.status === 'state_changed') {
+      throw new AppError(
+        409,
+        'BATCH_STATE_CHANGED',
+        'Стан одного з примірників змінився. Оновіть попередній перегляд.',
+      );
+    }
+    const batch = await this.getBatch(result.batchId);
+    return { ...batch, wasRepeated: result.status === 'repeated' };
+  }
+
+  /** @returns {Promise&lt;object>} Пакет масової видачі за ідентифікатором. */
+  async getBatch(batchId) {
+    validateBatchId(batchId);
+    const batch = await this.repository.findBatchById(batchId);
+    if (!batch) throw new AppError(404, 'BATCH_NOT_FOUND', 'Пакет видач не знайдено.');
+    return batch;
+  }
+}
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="AppError.html">AppError</a></li><li><a href="AuthService.html">AuthService</a></li><li><a href="CatalogService.html">CatalogService</a></li><li><a href="CopyService.html">CopyService</a></li><li><a href="HealthService.html">HealthService</a></li><li><a href="ImportService.html">ImportService</a></li><li><a href="LoanService.html">LoanService</a></li><li><a href="ReaderService.html">ReaderService</a></li><li><a href="ReportService.html">ReportService</a></li><li><a href="RestrictionService.html">RestrictionService</a></li><li><a href="Router.html">Router</a></li><li><a href="SchoolClassService.html">SchoolClassService</a></li><li><a href="StaffService.html">StaffService</a></li><li><a href="TextbookBatchService.html">TextbookBatchService</a></li></ul><h3>Global</h3><ul><li><a href="global.html#createApp">createApp</a></li><li><a href="global.html#createPool">createPool</a></li><li><a href="global.html#generateReaderTicketPdf">generateReaderTicketPdf</a></li><li><a href="global.html#loadConfig">loadConfig</a></li><li><a href="global.html#startReaderAnonymizationJob">startReaderAnonymizationJob</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a>
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

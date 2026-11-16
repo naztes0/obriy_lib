@@ -23,12 +23,16 @@ function readTextFilter(searchParams, name) {
   return value || null;
 }
 
+/**
+ * Реалізує пошук, створення, редагування та життєвий цикл видань.
+ */
 export class CatalogService {
   constructor(repository, { now = () => new Date() } = {}) {
     this.repository = repository;
     this.now = now;
   }
 
+  /** @param {URLSearchParams} searchParams Фільтри та пагінація. @returns {Promise<object>} Список і метадані пагінації. */
   async listBooks(searchParams) {
     const pagination = readPagination(searchParams);
     const archived = searchParams.get('archived') ?? 'active';
@@ -60,6 +64,7 @@ export class CatalogService {
     };
   }
 
+  /** @param {string} bookId Ідентифікатор видання. @returns {Promise<object>} Видання з авторами й примірниками. */
   async getBook(bookId) {
     if (!/^[1-9][0-9]*$/.test(bookId)) {
       throw new AppError(400, 'INVALID_BOOK_ID', 'Некоректний ідентифікатор книги.');
@@ -108,6 +113,7 @@ export class CatalogService {
     }
   }
 
+  /** @param {object} input Дані нового видання. @returns {Promise<object>} Створене видання. */
   async createBook(input) {
     const { values, confirmDuplicate } = validateBookCreate(input, this.now());
     await this.checkDuplicates(values, { confirmDuplicate });
@@ -129,6 +135,7 @@ export class CatalogService {
     }
   }
 
+  /** @param {string} bookId Ідентифікатор видання. @param {object} input Змінені поля та version. @returns {Promise<object>} Оновлене видання. */
   async updateBook(bookId, input) {
     const existing = await this.getBook(bookId);
     if (existing.isArchived) {
@@ -184,6 +191,7 @@ export class CatalogService {
     }
   }
 
+  /** @param {string} bookId Ідентифікатор. @param {object} input Version і причина. @param {object} actor Виконавець. @param {string} idempotencyKey Ключ повтору. @returns {Promise<object>} Архівоване видання. */
   async archiveBook(bookId, input, actor, idempotencyKey) {
     this.validateBookId(bookId);
     const values = validateBookArchive(input);
@@ -204,6 +212,7 @@ export class CatalogService {
     return await this.getBook(result.bookId);
   }
 
+  /** @returns {Promise<object>} Відновлене видання. */
   async restoreBook(bookId, input, actor, idempotencyKey) {
     this.validateBookId(bookId);
     const values = validateBookRestore(input);
@@ -219,6 +228,7 @@ export class CatalogService {
     return await this.getBook(result.bookId);
   }
 
+  /** @returns {Promise<object>} Підтвердження видалення видання без історії. */
   async deleteUnusedBook(bookId, input, actor, idempotencyKey) {
     this.validateBookId(bookId);
     const values = validateBookDelete(input);

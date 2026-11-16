@@ -38,6 +38,12 @@ function drawMixedSingleLine(document, value, x, y, { fontSize, color, bold = fa
   }
 }
 
+/**
+ * Генерує PDF електронного читацького квитка українською мовою.
+ *
+ * @param {{ticketNumber: string, fullName: string, schoolClass: object, ticketIssuedOn: string, ticketExpiresOn: string}} ticket Дані активного учня.
+ * @returns {Promise<Buffer>} PDF як буфер.
+ */
 export function generateReaderTicketPdf(ticket) {
   return new Promise((resolve, reject) => {
     const document = new PDFDocument({

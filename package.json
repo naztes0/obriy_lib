@@ -9,6 +9,14 @@
     "db:bootstrap": "pnpm --filter @obriy/backend db:bootstrap",
     "db:import:validate": "pnpm --filter @obriy/backend db:import:validate",
     "db:import": "pnpm --filter @obriy/backend db:import",
+    "docs:code": "jsdoc -c docs/jsdoc.config.json",
+    "docs:api": "node docs/scripts/build-api-docs.mjs",
+    "docs:build": "pnpm docs:code && pnpm docs:api",
     "test": "pnpm --filter @obriy/backend test"
+  },
+  "devDependencies": {
+    "@apidevtools/swagger-parser": "^13.1.0",
+    "jsdoc": "^4.0.5",
+    "swagger-ui-dist": "^5.35.0"
   }
 }

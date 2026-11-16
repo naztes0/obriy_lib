@@ -1,3 +1,11 @@
+/**
+ * Читає та перевіряє серверну конфігурацію зі змінних середовища.
+ *
+ * @param {NodeJS.ProcessEnv} [environment=process.env] Джерело змінних середовища.
+ * @returns {{host: string, port: number, sessionTtlMilliseconds: number, cookieSecure: boolean}}
+ * Нормалізована конфігурація запуску.
+ * @throws {Error} Якщо порт, тривалість сесії або COOKIE_SECURE некоректні.
+ */
 export function loadConfig(environment = process.env) {
   const port = Number(environment.PORT ?? 3000);
   const sessionTtlHours = Number(environment.SESSION_TTL_HOURS ?? 8);

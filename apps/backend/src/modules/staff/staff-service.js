@@ -33,11 +33,15 @@ function managerProtected() {
   );
 }
 
+/**
+ * Керує бібліотекарями та власним профілем єдиного завідувача.
+ */
 export class StaffService {
   constructor(repository) {
     this.repository = repository;
   }
 
+  /** @returns {Promise<object>} Сторінка активних або деактивованих працівників. */
   async listStaff(searchParams) {
     const pagination = readPagination(searchParams);
     const activity = searchParams.get('activity') ?? 'all';
@@ -62,6 +66,7 @@ export class StaffService {
     };
   }
 
+  /** @returns {Promise<object>} Створений акаунт із роллю `librarian`. */
   async createLibrarian(input) {
     const values = validateLibrarianCreate(input);
     const result = await this.repository.createLibrarian({
@@ -76,6 +81,7 @@ export class StaffService {
     return publicStaff(created);
   }
 
+  /** @returns {Promise<object>} Бібліотекар після зміни активності. */
   async setLibrarianActivity(staffId, input) {
     const id = readStaffId(staffId);
     const { isActive } = validateStaffActivity(input);
@@ -85,6 +91,7 @@ export class StaffService {
     return publicStaff(await this.repository.findStaffById(id));
   }
 
+  /** @returns {Promise<object>} Підтвердження зміни пароля й відкликання сесій. */
   async changeLibrarianPassword(staffId, input) {
     const id = readStaffId(staffId);
     const { newPassword } = validateLibrarianPassword(input);
@@ -97,6 +104,7 @@ export class StaffService {
     return { staffId: id, sessionsRevoked: true };
   }
 
+  /** @returns {Promise<object>} Завідувач з оновленим відображуваним ім'ям. */
   async updateOwnProfile(actor, input) {
     const { displayName } = validateManagerProfile(input);
     const result = await this.repository.updateManagerProfile(actor.id, displayName);
@@ -104,6 +112,7 @@ export class StaffService {
     return publicStaff(await this.repository.findStaffById(actor.id));
   }
 
+  /** @returns {Promise<object>} Підтвердження безпечної зміни власного пароля. */
   async changeOwnPassword(actor, input) {
     const { currentPassword, newPassword } = validateManagerPassword(input);
     const account = await this.repository.findStaffById(actor.id);

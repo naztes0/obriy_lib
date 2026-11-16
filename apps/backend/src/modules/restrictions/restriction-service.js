@@ -53,12 +53,16 @@ const COMMON_ERRORS = {
   ],
 };
 
+/**
+ * Керує підтвердженими блокуваннями читачів і погодженням розблокування.
+ */
 export class RestrictionService {
   constructor(repository, { now = () => new Date() } = {}) {
     this.repository = repository;
     this.now = now;
   }
 
+  /** @returns {Promise<object[]>} Історія блокувань і запитів читача. */
   async listReaderBlocks(readerId) {
     validateId(readerId, 'INVALID_READER_ID');
     const blocks = await this.repository.listReaderBlocks(readerId);
@@ -66,6 +70,7 @@ export class RestrictionService {
     return blocks;
   }
 
+  /** @returns {Promise<object>} Створене блокування за підтвердженим порушенням. */
   async confirmBlock(readerId, input, actor, idempotencyKey) {
     validateId(readerId, 'INVALID_READER_ID');
     const values = validateBlockConfirmation(input);
@@ -95,6 +100,7 @@ export class RestrictionService {
     return await this.getBlock(result.blockId);
   }
 
+  /** @returns {Promise<object>} Запит бібліотекаря на розблокування. */
   async createUnblockRequest(blockId, input, actor, idempotencyKey) {
     validateId(blockId, 'INVALID_READER_BLOCK_ID');
     const values = validateUnblockRequest(input);
@@ -116,6 +122,7 @@ export class RestrictionService {
     return await this.getBlock(result.blockId);
   }
 
+  /** @returns {Promise<object>} Блокування, закрите завідувачем. */
   async unblockDirectly(blockId, input, actor, idempotencyKey) {
     validateId(blockId, 'INVALID_READER_BLOCK_ID');
     const values = validateUnblock(input);
@@ -131,6 +138,7 @@ export class RestrictionService {
     return await this.getBlock(result.blockId);
   }
 
+  /** @returns {Promise<object>} Результат схвалення або відхилення запиту. */
   async decideUnblockRequest(requestId, input, actor, idempotencyKey) {
     validateId(requestId, 'INVALID_UNBLOCK_REQUEST_ID');
     const values = validateUnblockDecision(input);
@@ -151,6 +159,7 @@ export class RestrictionService {
     return await this.getBlock(result.blockId);
   }
 
+  /** @returns {Promise<object>} Анульоване помилкове блокування з аудитом. */
   async annulBlock(blockId, input, actor, idempotencyKey) {
     validateId(blockId, 'INVALID_READER_BLOCK_ID');
     const values = validateBlockAnnulment(input);

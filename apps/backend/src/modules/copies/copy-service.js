@@ -20,11 +20,15 @@ function validateId(value, entity) {
   }
 }
 
+/**
+ * Керує фізичними примірниками, їхнім станом, доступністю, архівом та списанням.
+ */
 export class CopyService {
   constructor(repository) {
     this.repository = repository;
   }
 
+  /** @param {string} copyId Ідентифікатор примірника. @returns {Promise<object>} Поточний примірник. */
   async getCopy(copyId) {
     validateId(copyId, 'copy');
     const copy = await this.repository.findCopyById(copyId);
@@ -32,6 +36,7 @@ export class CopyService {
     return copy;
   }
 
+  /** @param {string} bookId Видання. @param {object} input Інвентарний номер і стан. @param {object} actor Виконавець. @returns {Promise<object>} Новий примірник. */
   async createCopy(bookId, input, actor) {
     validateId(bookId, 'book');
     const values = validateCopyCreate(input);
@@ -56,6 +61,7 @@ export class CopyService {
     }
   }
 
+  /** @returns {Promise<object>} Примірник після фіксації фізичного стану. */
   async changeCondition(copyId, input, actor) {
     validateId(copyId, 'copy');
     const values = validateConditionChange(input);
@@ -64,6 +70,7 @@ export class CopyService {
     return await this.getCopy(copyId);
   }
 
+  /** @returns {Promise<object>} Примірник після зміни тимчасової доступності. */
   async setTemporaryUnavailability(copyId, input, actor) {
     validateId(copyId, 'copy');
     const values = validateTemporaryUnavailability(input);
@@ -75,6 +82,7 @@ export class CopyService {
     return await this.getCopy(copyId);
   }
 
+  /** @returns {Promise<object>} Примірник, втрачений усередині фонду без прив'язки до читача. */
   async markLostInFund(copyId, input, actor, idempotencyKey) {
     validateId(copyId, 'copy');
     const values = validateCopyLoss(input);
@@ -116,6 +124,7 @@ export class CopyService {
     }
   }
 
+  /** @returns {Promise<object>} Сторінка незмінної історії примірника. */
   async listHistory(copyId, searchParams) {
     await this.getCopy(copyId);
     const pagination = readPagination(searchParams);
@@ -131,6 +140,7 @@ export class CopyService {
     };
   }
 
+  /** @returns {Promise<object>} Архівований примірник. */
   async archiveCopy(copyId, input, actor, idempotencyKey) {
     validateId(copyId, 'copy');
     const values = validateCopyArchive(input);
@@ -151,6 +161,7 @@ export class CopyService {
     return await this.getCopy(result.copyId);
   }
 
+  /** @returns {Promise<object>} Відновлений примірник. */
   async restoreCopy(copyId, input, actor, idempotencyKey) {
     validateId(copyId, 'copy');
     const values = validateCopyRestore(input);
@@ -225,6 +236,7 @@ export class CopyService {
     }
   }
 
+  /** @returns {Promise<object>} Результат остаточного списання з аудитом. */
   async writeOffCopy(copyId, input, actor, idempotencyKey) {
     validateId(copyId, 'copy');
     const values = validateCopyWriteOff(input);
@@ -271,6 +283,7 @@ export class CopyService {
     }
   }
 
+  /** @returns {Promise<object>} Примірник після виправлення прив'язки до видання. */
   async changeBook(copyId, input, actor, idempotencyKey) {
     validateId(copyId, 'copy');
     const values = validateCopyBookChange(input);

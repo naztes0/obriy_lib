@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: modules/auth/auth-service.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: modules/auth/auth-service.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { AppError } from '../../http/app-error.js';
+import { verifyPassword } from './password.js';
+
+const INVALID_CREDENTIALS = new AppError(401, 'INVALID_CREDENTIALS', 'Неправильний логін або пароль.');
+
+function hashToken(token) {
+  return createHash('sha256').update(token).digest('hex');
+}
+
+function publicStaff(account) {
+  return {
+    id: String(account.id),
+    login: account.login,
+    displayName: account.display_name,
+    role: account.role,
+  };
+}
+
+/**
+ * Керує входом, перевіркою та завершенням cookie-сесій працівників.
+ */
+export class AuthService {
+  constructor(repository, { sessionTtlMilliseconds, now = () => new Date() }) {
+    this.repository = repository;
+    this.sessionTtlMilliseconds = sessionTtlMilliseconds;
+    this.now = now;
+  }
+
+  /**
+   * Перевіряє облікові дані й створює нову випадкову сесію.
+   * @param {{login: string, password: string}} credentials Логін і пароль.
+   * @returns {Promise&lt;{staff: object, token: string, expiresAt: string}>} Працівник і відкритий токен для cookie.
+   */
+  async login({ login, password }) {
+    const normalizedLogin = typeof login === 'string' ? login.trim() : '';
+    const validPasswordShape = typeof password === 'string' &amp;&amp; password.length >= 1 &amp;&amp; password.length &lt;= 256;
+
+    if (!normalizedLogin || normalizedLogin.length > 64 || !validPasswordShape) {
+      throw INVALID_CREDENTIALS;
+    }
+
+    const account = await this.repository.findAccountByLogin(normalizedLogin);
+    const passwordMatches = await verifyPassword(password, account?.password_hash);
+    if (!account || !account.is_active || !passwordMatches) {
+      throw INVALID_CREDENTIALS;
+    }
+
+    const token = randomBytes(32).toString('base64url');
+    const expiresAt = new Date(this.now().getTime() + this.sessionTtlMilliseconds);
+    await this.repository.createSession({
+      id: randomUUID(),
+      staffId: account.id,
+      tokenHash: hashToken(token),
+      expiresAt,
+    });
+
+    return { token, expiresAt, staff: publicStaff(account) };
+  }
+
+  /**
+   * Перевіряє токен сесії та активність працівника.
+   * @param {string} token Значення cookie `obriy_session`.
+   * @returns {Promise&lt;object|null>} Поточний працівник або `null`.
+   */
+  async authenticateToken(token) {
+    if (typeof token !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(token)) {
+      throw new AppError(401, 'AUTHENTICATION_REQUIRED', 'Увійдіть у систему.');
+    }
+
+    const session = await this.repository.findActiveSession(hashToken(token));
+    if (!session) {
+      throw new AppError(401, 'SESSION_EXPIRED', 'Сеанс завершився. Увійдіть повторно.');
+    }
+
+    return publicStaff(session);
+  }
+
+  /**
+   * Відкликає поточну сесію.
+   * @param {string} token Значення cookie сесії.
+   * @returns {Promise&lt;void>}
+   */
+  async logout(token) {
+    if (typeof token === 'string' &amp;&amp; /^[A-Za-z0-9_-]{43}$/.test(token)) {
+      await this.repository.revokeSession(hashToken(token));
+    }
+  }
+}
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="AppError.html">AppError</a></li><li><a href="AuthService.html">AuthService</a></li><li><a href="CatalogService.html">CatalogService</a></li><li><a href="CopyService.html">CopyService</a></li><li><a href="HealthService.html">HealthService</a></li><li><a href="ImportService.html">ImportService</a></li><li><a href="LoanService.html">LoanService</a></li><li><a href="ReaderService.html">ReaderService</a></li><li><a href="ReportService.html">ReportService</a></li><li><a href="RestrictionService.html">RestrictionService</a></li><li><a href="Router.html">Router</a></li><li><a href="SchoolClassService.html">SchoolClassService</a></li><li><a href="StaffService.html">StaffService</a></li><li><a href="TextbookBatchService.html">TextbookBatchService</a></li></ul><h3>Global</h3><ul><li><a href="global.html#createApp">createApp</a></li><li><a href="global.html#createPool">createPool</a></li><li><a href="global.html#generateReaderTicketPdf">generateReaderTicketPdf</a></li><li><a href="global.html#loadConfig">loadConfig</a></li><li><a href="global.html#startReaderAnonymizationJob">startReaderAnonymizationJob</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a>
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

@@ -33,12 +33,16 @@ function throwConflicts(result) {
   if (result.status === 'conflict') throw new ImportPackageError(result.errors);
 }
 
+/**
+ * Перевіряє та атомарно імпортує пакет історичних CSV-даних.
+ */
 export class ImportService {
   constructor(repository, { packageLoader = loadImportPackage } = {}) {
     this.repository = repository;
     this.packageLoader = packageLoader;
   }
 
+  /** @returns {Promise<object>} Протокол перевірки без зміни БД. */
   async validate({ sourceName, directory }) {
     const source = validateSourceName(sourceName);
     const importPackage = await this.packageLoader(directory);
@@ -53,6 +57,7 @@ export class ImportService {
     };
   }
 
+  /** @returns {Promise<object>} Результат імпорту або повторного використання пакета. */
   async import({ sourceName, directory, operatorName }) {
     const source = validateSourceName(sourceName);
     const operator = validateOperatorName(operatorName);

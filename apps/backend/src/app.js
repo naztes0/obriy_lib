@@ -34,6 +34,17 @@ import { TextbookBatchRepository } from './modules/textbook-batches/textbook-bat
 import { registerTextbookBatchRoutes } from './modules/textbook-batches/textbook-batch-routes.js';
 import { TextbookBatchService } from './modules/textbook-batches/textbook-batch-service.js';
 
+/**
+ * Створює головний HTTP-обробник застосунку та з'єднує всі предметні модулі.
+ *
+ * @param {object} dependencies Залежності застосунку.
+ * @param {object} dependencies.pool Пул PostgreSQL.
+ * @param {object} [dependencies.config] Налаштування cookie та тривалості сесії.
+ * @param {Console} [dependencies.logger=console] Технічний logger.
+ * @param {object} [dependencies.services] Підміни сервісів для тестування.
+ * @returns {Function}
+ * HTTP-обробник, придатний для `http.createServer`.
+ */
 export function createApp({ pool, config = {}, logger = console, services = {} }) {
   const effectiveConfig = {
     sessionTtlMilliseconds: 8 * 60 * 60 * 1000,
