@@ -1065,3 +1065,155 @@ test('librarian can move an unused copy to another book', async () => {
   assert.equal(received.actor, actor);
   assert.equal(received.requestKey, 'change-copy-book-http-1');
 });
+
+test('manager correction route passes a normalized command to the correction service', async () => {
+  const actor = { id: '1', role: 'manager' };
+  const authService = {
+    authenticateToken: async () => actor,
+    login: async () => {},
+    logout: async () => {},
+  };
+  let received;
+  const correctionService = {
+    execute: async (operation, entityId, input, requestActor, key) => {
+      received = { operation, entityId, input, actor: requestActor, key };
+      return { id: entityId, voided: true };
+    },
+  };
+  const baseUrl = await startTestServer(
+    { query: async () => ({}) },
+    { services: { authService, correctionService } },
+  );
+  const input = {
+    version: '2',
+    reason: 'Фактичної передачі не було',
+    confirm: true,
+    confirmNoTransfer: true,
+  };
+
+  const response = await fetch(`${baseUrl}/api/v1/loans/20/void`, {
+    method: 'POST',
+    headers: {
+      Cookie: 'obriy_session=test-session',
+      'Content-Type': 'application/json',
+      'Idempotency-Key': 'void-loan-http-1',
+    },
+    body: JSON.stringify(input),
+  });
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(received, {
+    operation: 'void_loan',
+    entityId: '20',
+    input,
+    actor,
+    key: 'void-loan-http-1',
+  });
+});
+
+test('librarian cannot access manager correction routes', async () => {
+  const authService = {
+    authenticateToken: async () => ({ id: '2', role: 'librarian' }),
+    login: async () => {},
+    logout: async () => {},
+  };
+  const correctionService = { execute: async () => assert.fail('service must not be called') };
+  const baseUrl = await startTestServer(
+    { query: async () => ({}) },
+    { services: { authService, correctionService } },
+  );
+
+  for (const path of ['/api/v1/loans/20/void', '/api/v1/copies/12/settle-loss']) {
+    const response = await fetch(`${baseUrl}${path}`, {
+      method: 'POST',
+      headers: { Cookie: 'obriy_session=test-session', 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+    assert.equal(response.status, 403, path);
+    assert.equal((await response.json()).error.code, 'ACCESS_DENIED', path);
+  }
+});
+
+test('librarian can delete unused books and copies without history', async () => {
+  const actor = { id: '2', role: 'librarian' };
+  const authService = {
+    authenticateToken: async () => actor,
+    login: async () => {},
+    logout: async () => {},
+  };
+  const received = [];
+  const catalogService = {
+    deleteUnusedBook: async (id, input, requestActor, key) => {
+      received.push({ kind: 'book', id, input, actor: requestActor, key });
+      return { id, deleted: true };
+    },
+  };
+  const copyService = {
+    deleteUnusedCopy: async (id, input, requestActor, key) => {
+      received.push({ kind: 'copy', id, input, actor: requestActor, key });
+      return { id, deleted: true };
+    },
+  };
+  const baseUrl = await startTestServer(
+    { query: async () => ({}) },
+    { services: { authService, catalogService, copyService } },
+  );
+
+  for (const [path, key] of [
+    ['/api/v1/books/8/delete', 'delete-book-http-1'],
+    ['/api/v1/copies/12/delete', 'delete-copy-http-1'],
+  ]) {
+    const response = await fetch(`${baseUrl}${path}`, {
+      method: 'POST',
+      headers: {
+        Cookie: 'obriy_session=test-session',
+        'Content-Type': 'application/json',
+        'Idempotency-Key': key,
+      },
+      body: JSON.stringify({ version: '1', confirmDelete: true }),
+    });
+    assert.equal(response.status, 200, path);
+  }
+
+  assert.equal(received.length, 2);
+  assert.equal(received[0].actor, actor);
+  assert.equal(received[1].actor, actor);
+});
+
+test('only librarian can create an unblock request', async () => {
+  let role = 'manager';
+  const authService = {
+    authenticateToken: async () => ({ id: role === 'manager' ? '1' : '2', role }),
+    login: async () => {},
+    logout: async () => {},
+  };
+  let called = false;
+  const restrictionService = {
+    createUnblockRequest: async () => {
+      called = true;
+      return { id: '7', status: 'active' };
+    },
+  };
+  const baseUrl = await startTestServer(
+    { query: async () => ({}) },
+    { services: { authService, restrictionService } },
+  );
+  const request = () => fetch(`${baseUrl}/api/v1/reader-blocks/7/unblock-requests`, {
+    method: 'POST',
+    headers: {
+      Cookie: 'obriy_session=test-session',
+      'Content-Type': 'application/json',
+      'Idempotency-Key': `unblock-${role}`,
+    },
+    body: '{}',
+  });
+
+  const managerResponse = await request();
+  assert.equal(managerResponse.status, 403);
+  assert.equal(called, false);
+
+  role = 'librarian';
+  const librarianResponse = await request();
+  assert.equal(librarianResponse.status, 201);
+  assert.equal(called, true);
+});

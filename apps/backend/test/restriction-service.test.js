@@ -19,6 +19,26 @@ function block(overrides = {}) {
   };
 }
 
+test('active restriction list passes pending filter and pagination', async () => {
+  let received;
+  const service = new RestrictionService({
+    listActive: async (query) => {
+      received = query;
+      return { items: [{ id: '7' }], totalItems: 26 };
+    },
+  });
+
+  const result = await service.listActive(
+    new URLSearchParams({ pending: 'true', page: '2', pageSize: '25' }),
+  );
+
+  assert.deepEqual(received, { pending: true, pageSize: 25, offset: 25 });
+  assert.deepEqual(result, {
+    data: [{ id: '7' }],
+    meta: { page: 2, pageSize: 25, totalItems: 26, totalPages: 2 },
+  });
+});
+
 test('block confirmation passes the ground, actor and Kyiv date', async () => {
   let received;
   const repository = {
