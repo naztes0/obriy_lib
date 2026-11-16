@@ -6,6 +6,7 @@ function mapSchoolClass(row) {
   };
 }
 
+/** Виконує операції з довідником навчальних класів. */
 export class SchoolClassRepository {
   async remove(classId) {
     await this.pool.query('DELETE FROM school_classes WHERE id=$1',[classId]);

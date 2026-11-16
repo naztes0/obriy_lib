@@ -6,7 +6,7 @@ export class HealthService {
     this.pool = pool;
   }
 
-  /** @returns {Promise<{status: string, database: string}>} Стан сервера й БД. */
+  /** @returns {Promise<{status: string}>} Стан сервера після успішної перевірки БД. */
   async check() {
     await this.pool.query('SELECT 1');
     return { status: 'ok' };

@@ -15,6 +15,7 @@ function duplicateNameError() {
  * Керує єдиним довідником класів ліцею.
  */
 export class SchoolClassService {
+  /** @returns {Promise<object>} Підтвердження видалення класу без пов'язаних записів. */
   async remove(classId,input) {
     validateClassId(classId);
     if (input?.confirm !== true) throw new AppError(400,'CONFIRMATION_REQUIRED','Підтвердьте вилучення класу.');

@@ -2,6 +2,9 @@ import { AppError } from '../../http/app-error.js';
 
 const fail = (code, message, status = 422) => { throw new AppError(status, code, message); };
 
+/**
+ * Атомарно виправляє помилкові видачі та втрати, блокуючи записи й зберігаючи аудит.
+ */
 export class CorrectionRepository {
   constructor(pool) { this.pool = pool; }
 

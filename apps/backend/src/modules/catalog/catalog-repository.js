@@ -111,6 +111,7 @@ function buildFilters(filters) {
   };
 }
 
+/** Зберігає видання, авторів і операції життєвого циклу каталогу. */
 export class CatalogRepository {
   constructor(pool) {
     this.pool = pool;

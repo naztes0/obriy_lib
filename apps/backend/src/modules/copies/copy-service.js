@@ -186,6 +186,7 @@ export class CopyService {
     return await this.getCopy(result.copyId);
   }
 
+  /** @returns {Promise<object>} Підтвердження видалення примірника без історії. */
   async deleteUnusedCopy(copyId, input, actor, idempotencyKey) {
     validateId(copyId, 'copy');
     const values = validateCopyDelete(input);
@@ -211,6 +212,7 @@ export class CopyService {
     return { id: result.copyId, deleted: true };
   }
 
+  /** @returns {Promise<object>} Примірник з виправленим інвентарним номером та аудитом. */
   async correctInventoryNumber(copyId, input, actor, idempotencyKey) {
     validateId(copyId, 'copy');
     const values = validateInventoryNumberCorrection(input);

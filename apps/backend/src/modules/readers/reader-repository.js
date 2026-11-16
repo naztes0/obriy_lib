@@ -129,6 +129,7 @@ async function completeRequest(client, { actorId, operation, requestKey, resultI
   );
 }
 
+/** Працює з картками читачів, персональними даними та їх життєвим циклом. */
 export class ReaderRepository {
   constructor(pool) {
     this.pool = pool;

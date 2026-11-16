@@ -81,6 +81,7 @@ async function completeRequest(client, { actorId, operation, requestKey, resultI
   );
 }
 
+/** Виконує SQL-операції з примірниками та їх незмінною історією. */
 export class CopyRepository {
   constructor(pool) {
     this.pool = pool;

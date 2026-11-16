@@ -533,6 +533,7 @@ async function advanceElectronicTicketSequence(client, readers) {
   `);
 }
 
+/** Атомарно імпортує перевірені класи, читачів, видання та примірники. */
 export class ImportRepository {
   constructor(pool) {
     this.pool = pool;

@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: modules/loans/correction-service.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: modules/loans/correction-service.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>import { AppError } from '../../http/app-error.js';
+import { validateIdempotencyKey } from './loan-input.js';
+
+const OPERATIONS = new Set([
+  'correct_participants',
+  'void_loan',
+  'correct_fund_loss',
+  'settle_fund_loss',
+]);
+
+/**
+ * Перевіряє команди завідувача для виправлення помилкових операцій.
+ */
+export class CorrectionService {
+  constructor(repository) {
+    this.repository = repository;
+  }
+
+  /**
+   * @param {string} operation Тип виправлення.
+   * @param {string} entityId Ідентифікатор видачі або примірника.
+   * @param {object} input Версія, причина, підтвердження та нові посилання.
+   * @param {object} actor Завідувач, який виконує операцію.
+   * @param {string} idempotencyKey Ключ захисту від повторного виконання.
+   * @returns {Promise&lt;object>} Результат атомарного виправлення.
+   */
+  async execute(operation, entityId, input, actor, idempotencyKey) {
+    if (
+      !OPERATIONS.has(operation) ||
+      !input ||
+      !/^[1-9][0-9]*$/.test(entityId) ||
+      !/^[1-9][0-9]*$/.test(String(input.version)) ||
+      typeof input.reason !== 'string' ||
+      !input.reason.trim() ||
+      input.reason.trim().length > 500 ||
+      input.confirm !== true ||
+      ['readerId', 'copyId'].some(
+        (key) => input[key] != null &amp;&amp; !/^[1-9][0-9]*$/.test(String(input[key])),
+      )
+    ) {
+      throw new AppError(
+        400,
+        'VALIDATION_ERROR',
+        'Перевірте записи, причину та підтвердження операції.',
+      );
+    }
+
+    return await this.repository.execute(operation, entityId, {
+      actorId: actor.id,
+      requestKey: validateIdempotencyKey(idempotencyKey),
+      version: String(input.version),
+      reason: input.reason.trim(),
+      readerId: input.readerId == null ? null : String(input.readerId),
+      copyId: input.copyId == null ? null : String(input.copyId),
+      confirmNoTransfer: input.confirmNoTransfer === true,
+    });
+  }
+}
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="AppError.html">AppError</a></li><li><a href="AuthRepository.html">AuthRepository</a></li><li><a href="AuthService.html">AuthService</a></li><li><a href="CatalogRepository.html">CatalogRepository</a></li><li><a href="CatalogService.html">CatalogService</a></li><li><a href="CopyRepository.html">CopyRepository</a></li><li><a href="CopyService.html">CopyService</a></li><li><a href="CorrectionRepository.html">CorrectionRepository</a></li><li><a href="CorrectionService.html">CorrectionService</a></li><li><a href="HealthService.html">HealthService</a></li><li><a href="HistoryRepository.html">HistoryRepository</a></li><li><a href="HistoryService.html">HistoryService</a></li><li><a href="ImportPackageError.html">ImportPackageError</a></li><li><a href="ImportRepository.html">ImportRepository</a></li><li><a href="ImportService.html">ImportService</a></li><li><a href="LoanRepository.html">LoanRepository</a></li><li><a href="LoanService.html">LoanService</a></li><li><a href="ReaderRepository.html">ReaderRepository</a></li><li><a href="ReaderService.html">ReaderService</a></li><li><a href="ReportRepository.html">ReportRepository</a></li><li><a href="ReportService.html">ReportService</a></li><li><a href="RestrictionRepository.html">RestrictionRepository</a></li><li><a href="RestrictionService.html">RestrictionService</a></li><li><a href="Router.html">Router</a></li><li><a href="SchoolClassRepository.html">SchoolClassRepository</a></li><li><a href="SchoolClassService.html">SchoolClassService</a></li><li><a href="StaffRepository.html">StaffRepository</a></li><li><a href="StaffService.html">StaffService</a></li><li><a href="TextbookBatchRepository.html">TextbookBatchRepository</a></li><li><a href="TextbookBatchService.html">TextbookBatchService</a></li></ul><h3>Global</h3><ul><li><a href="global.html#createApp">createApp</a></li><li><a href="global.html#createPool">createPool</a></li><li><a href="global.html#generateReaderTicketPdf">generateReaderTicketPdf</a></li><li><a href="global.html#loadConfig">loadConfig</a></li><li><a href="global.html#startReaderAnonymizationJob">startReaderAnonymizationJob</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a>
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

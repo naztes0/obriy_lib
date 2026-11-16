@@ -63,6 +63,7 @@ export class RestrictionService {
     this.now = now;
   }
 
+  /** @returns {Promise<{data: object[], meta: object}>} Сторінка активних блокувань. */
   async listActive(searchParams) {
     const pagination = readPagination(searchParams);
     const result = await this.repository.listActive({
@@ -197,6 +198,7 @@ export class RestrictionService {
     return await this.getBlock(result.blockId);
   }
 
+  /** @returns {Promise<object>} Блокування з пов'язаними запитами на розгляд. */
   async getBlock(blockId) {
     const block = await this.repository.findBlockById(blockId);
     if (!block) throw new AppError(404, 'READER_BLOCK_NOT_FOUND', 'Блокування не знайдено.');

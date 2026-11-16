@@ -193,6 +193,7 @@ function mapBatchLoan(row) {
   };
 }
 
+/** Атомарно створює та читає пакети масової видачі підручників. */
 export class TextbookBatchRepository {
   constructor(pool) {
     this.pool = pool;

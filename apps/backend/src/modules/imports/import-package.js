@@ -98,6 +98,7 @@ const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/;
 const NUMBER_PATTERN = /^[A-Za-zА-Яа-яІіЇїЄєҐґ0-9/-]{1,32}$/u;
 
+/** Помилка структури або вмісту CSV-пакета з прив'язкою до конкретного файлу. */
 export class ImportPackageError extends Error {
   constructor(errors) {
     super('CSV package validation failed');

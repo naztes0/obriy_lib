@@ -8,11 +8,22 @@ const OPERATIONS = new Set([
   'settle_fund_loss',
 ]);
 
+/**
+ * Перевіряє команди завідувача для виправлення помилкових операцій.
+ */
 export class CorrectionService {
   constructor(repository) {
     this.repository = repository;
   }
 
+  /**
+   * @param {string} operation Тип виправлення.
+   * @param {string} entityId Ідентифікатор видачі або примірника.
+   * @param {object} input Версія, причина, підтвердження та нові посилання.
+   * @param {object} actor Завідувач, який виконує операцію.
+   * @param {string} idempotencyKey Ключ захисту від повторного виконання.
+   * @returns {Promise<object>} Результат атомарного виправлення.
+   */
   async execute(operation, entityId, input, actor, idempotencyKey) {
     if (
       !OPERATIONS.has(operation) ||

@@ -27,6 +27,7 @@
     <section>
         <article>
             <pre class="prettyprint source linenums"><code>import { AppError } from '../../http/app-error.js';
+import { readPagination } from '../../http/pagination.js';
 import {
   validateBlockAnnulment,
   validateBlockConfirmation,
@@ -88,6 +89,25 @@ export class RestrictionService {
   constructor(repository, { now = () => new Date() } = {}) {
     this.repository = repository;
     this.now = now;
+  }
+
+  /** @returns {Promise&lt;{data: object[], meta: object}>} Сторінка активних блокувань. */
+  async listActive(searchParams) {
+    const pagination = readPagination(searchParams);
+    const result = await this.repository.listActive({
+      pending: searchParams.get('pending') === 'true',
+      pageSize: pagination.pageSize,
+      offset: pagination.offset,
+    });
+    return {
+      data: result.items,
+      meta: {
+        page: pagination.page,
+        pageSize: pagination.pageSize,
+        totalItems: result.totalItems,
+        totalPages: Math.ceil(result.totalItems / pagination.pageSize),
+      },
+    };
   }
 
   /** @returns {Promise&lt;object[]>} Історія блокувань і запитів читача. */
@@ -206,6 +226,7 @@ export class RestrictionService {
     return await this.getBlock(result.blockId);
   }
 
+  /** @returns {Promise&lt;object>} Блокування з пов'язаними запитами на розгляд. */
   async getBlock(blockId) {
     const block = await this.repository.findBlockById(blockId);
     if (!block) throw new AppError(404, 'READER_BLOCK_NOT_FOUND', 'Блокування не знайдено.');
@@ -228,7 +249,7 @@ export class RestrictionService {
 </div>
 
 <nav>
-    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="AppError.html">AppError</a></li><li><a href="AuthService.html">AuthService</a></li><li><a href="CatalogService.html">CatalogService</a></li><li><a href="CopyService.html">CopyService</a></li><li><a href="HealthService.html">HealthService</a></li><li><a href="ImportService.html">ImportService</a></li><li><a href="LoanService.html">LoanService</a></li><li><a href="ReaderService.html">ReaderService</a></li><li><a href="ReportService.html">ReportService</a></li><li><a href="RestrictionService.html">RestrictionService</a></li><li><a href="Router.html">Router</a></li><li><a href="SchoolClassService.html">SchoolClassService</a></li><li><a href="StaffService.html">StaffService</a></li><li><a href="TextbookBatchService.html">TextbookBatchService</a></li></ul><h3>Global</h3><ul><li><a href="global.html#createApp">createApp</a></li><li><a href="global.html#createPool">createPool</a></li><li><a href="global.html#generateReaderTicketPdf">generateReaderTicketPdf</a></li><li><a href="global.html#loadConfig">loadConfig</a></li><li><a href="global.html#startReaderAnonymizationJob">startReaderAnonymizationJob</a></li></ul>
+    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="AppError.html">AppError</a></li><li><a href="AuthRepository.html">AuthRepository</a></li><li><a href="AuthService.html">AuthService</a></li><li><a href="CatalogRepository.html">CatalogRepository</a></li><li><a href="CatalogService.html">CatalogService</a></li><li><a href="CopyRepository.html">CopyRepository</a></li><li><a href="CopyService.html">CopyService</a></li><li><a href="CorrectionRepository.html">CorrectionRepository</a></li><li><a href="CorrectionService.html">CorrectionService</a></li><li><a href="HealthService.html">HealthService</a></li><li><a href="HistoryRepository.html">HistoryRepository</a></li><li><a href="HistoryService.html">HistoryService</a></li><li><a href="ImportPackageError.html">ImportPackageError</a></li><li><a href="ImportRepository.html">ImportRepository</a></li><li><a href="ImportService.html">ImportService</a></li><li><a href="LoanRepository.html">LoanRepository</a></li><li><a href="LoanService.html">LoanService</a></li><li><a href="ReaderRepository.html">ReaderRepository</a></li><li><a href="ReaderService.html">ReaderService</a></li><li><a href="ReportRepository.html">ReportRepository</a></li><li><a href="ReportService.html">ReportService</a></li><li><a href="RestrictionRepository.html">RestrictionRepository</a></li><li><a href="RestrictionService.html">RestrictionService</a></li><li><a href="Router.html">Router</a></li><li><a href="SchoolClassRepository.html">SchoolClassRepository</a></li><li><a href="SchoolClassService.html">SchoolClassService</a></li><li><a href="StaffRepository.html">StaffRepository</a></li><li><a href="StaffService.html">StaffService</a></li><li><a href="TextbookBatchRepository.html">TextbookBatchRepository</a></li><li><a href="TextbookBatchService.html">TextbookBatchService</a></li></ul><h3>Global</h3><ul><li><a href="global.html#createApp">createApp</a></li><li><a href="global.html#createPool">createPool</a></li><li><a href="global.html#generateReaderTicketPdf">generateReaderTicketPdf</a></li><li><a href="global.html#loadConfig">loadConfig</a></li><li><a href="global.html#startReaderAnonymizationJob">startReaderAnonymizationJob</a></li></ul>
 </nav>
 
 <br class="clear">

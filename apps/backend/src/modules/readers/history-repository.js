@@ -1,3 +1,6 @@
+/**
+ * Читає з PostgreSQL історію видач читача та журнал виправлень.
+ */
 export class HistoryRepository {
   constructor(pool) {
     this.pool = pool;

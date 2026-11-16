@@ -9,6 +9,7 @@ function mapStaff(row) {
   };
 }
 
+/** Зберігає акаунти бібліотекарів і керує відкликанням їх сесій. */
 export class StaffRepository {
   constructor(pool) {
     this.pool = pool;

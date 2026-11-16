@@ -67,6 +67,7 @@ async function completeRequest(client, { actorId, operation, requestKey, resultI
   );
 }
 
+/** Зберігає видачі, повернення, втрати, компенсації та події примірників. */
 export class LoanRepository {
   constructor(pool) {
     this.pool = pool;

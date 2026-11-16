@@ -146,6 +146,7 @@ export class ReaderService {
     };
   }
 
+  /** @returns {Promise<void>} Завершується успішно або повертає попередження про тезок. */
   async checkNamesakes(fullName, { excludeReaderId = null, confirmed = false } = {}) {
     const matches = await this.repository.findNamesakes(
       normalizeComparableName(fullName),

@@ -137,6 +137,7 @@ async function hasBlockingGrounds(client, readerId, today) {
   return result.rows[0].has_overdue || result.rows[0].has_unresolved_loss;
 }
 
+/** Зберігає блокування, запити на розблокування та рішення завідувача. */
 export class RestrictionRepository {
   constructor(pool) {
     this.pool = pool;

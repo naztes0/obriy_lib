@@ -80,6 +80,7 @@ export class CatalogService {
     return book;
   }
 
+  /** @returns {Promise<void>} Завершується успішно або вимагає підтвердити можливий дублікат. */
   async checkDuplicates(book, { excludeBookId = null, confirmDuplicate = false } = {}) {
     if (book.isbnNormalized) {
       const duplicate = await this.repository.findBookByNormalizedIsbn(

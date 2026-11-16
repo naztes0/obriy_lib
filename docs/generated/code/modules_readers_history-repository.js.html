@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: modules/readers/history-repository.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: modules/readers/history-repository.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>/**
+ * Читає з PostgreSQL історію видач читача та журнал виправлень.
+ */
+export class HistoryRepository {
+  constructor(pool) {
+    this.pool = pool;
+  }
+
+  async listReaderHistory(readerId, { dateFrom, dateTo, pageSize, offset }) {
+    const values = [readerId, dateFrom, dateTo];
+    const where = `l.reader_id = $1
+      AND ($2::date IS NULL OR (l.issued_at AT TIME ZONE 'Europe/Kyiv')::date >= $2::date)
+      AND ($3::date IS NULL OR (l.issued_at AT TIME ZONE 'Europe/Kyiv')::date &lt;= $3::date)`;
+    const count = await this.pool.query(`SELECT count(*) FROM loans l WHERE ${where}`, values);
+    const rows = await this.pool.query(
+      `SELECT l.id::text, l.status, l.issued_at AS "issuedAt",
+              l.current_due_date::text AS "currentDueDate", b.title,
+              bc.inventory_number AS "inventoryNumber", issuer.display_name AS "issuedBy",
+              (
+                SELECT coalesce(json_agg(events ORDER BY events."occurredAt" DESC), '[]')
+                FROM (
+                  SELECT e.kind, e.occurred_at AS "occurredAt", e.reason,
+                         e.old_value AS "oldValue", e.new_value AS "newValue",
+                         coalesce(s.display_name, e.performed_by_snapshot) AS actor
+                  FROM book_copy_events e
+                  LEFT JOIN staff_accounts s ON s.id = e.actor_id
+                  WHERE e.loan_id = l.id
+                ) events
+              ) AS events
+       FROM loans l
+       JOIN book_copies bc ON bc.id = l.copy_id
+       JOIN books b ON b.id = bc.book_id
+       LEFT JOIN staff_accounts issuer ON issuer.id = l.issued_by
+       WHERE ${where}
+       ORDER BY l.issued_at DESC, l.id DESC
+       LIMIT $4 OFFSET $5`,
+      [...values, pageSize, offset],
+    );
+    return { items: rows.rows, totalItems: Number(count.rows[0].count) };
+  }
+
+  async listLoanAudit(loanId) {
+    const result = await this.pool.query(
+      `SELECT c.id::text, c.operation, c.reason, c.old_value AS "oldValue",
+              c.new_value AS "newValue", c.occurred_at AS "occurredAt",
+              s.display_name AS actor
+       FROM operation_corrections c
+       LEFT JOIN staff_accounts s ON s.id = c.actor_id
+       WHERE c.entity_id = $1
+         AND c.operation IN ('correct_participants', 'void_loan')
+       ORDER BY c.occurred_at DESC`,
+      [loanId],
+    );
+    return result.rows;
+  }
+}
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="AppError.html">AppError</a></li><li><a href="AuthRepository.html">AuthRepository</a></li><li><a href="AuthService.html">AuthService</a></li><li><a href="CatalogRepository.html">CatalogRepository</a></li><li><a href="CatalogService.html">CatalogService</a></li><li><a href="CopyRepository.html">CopyRepository</a></li><li><a href="CopyService.html">CopyService</a></li><li><a href="CorrectionRepository.html">CorrectionRepository</a></li><li><a href="CorrectionService.html">CorrectionService</a></li><li><a href="HealthService.html">HealthService</a></li><li><a href="HistoryRepository.html">HistoryRepository</a></li><li><a href="HistoryService.html">HistoryService</a></li><li><a href="ImportPackageError.html">ImportPackageError</a></li><li><a href="ImportRepository.html">ImportRepository</a></li><li><a href="ImportService.html">ImportService</a></li><li><a href="LoanRepository.html">LoanRepository</a></li><li><a href="LoanService.html">LoanService</a></li><li><a href="ReaderRepository.html">ReaderRepository</a></li><li><a href="ReaderService.html">ReaderService</a></li><li><a href="ReportRepository.html">ReportRepository</a></li><li><a href="ReportService.html">ReportService</a></li><li><a href="RestrictionRepository.html">RestrictionRepository</a></li><li><a href="RestrictionService.html">RestrictionService</a></li><li><a href="Router.html">Router</a></li><li><a href="SchoolClassRepository.html">SchoolClassRepository</a></li><li><a href="SchoolClassService.html">SchoolClassService</a></li><li><a href="StaffRepository.html">StaffRepository</a></li><li><a href="StaffService.html">StaffService</a></li><li><a href="TextbookBatchRepository.html">TextbookBatchRepository</a></li><li><a href="TextbookBatchService.html">TextbookBatchService</a></li></ul><h3>Global</h3><ul><li><a href="global.html#createApp">createApp</a></li><li><a href="global.html#createPool">createPool</a></li><li><a href="global.html#generateReaderTicketPdf">generateReaderTicketPdf</a></li><li><a href="global.html#loadConfig">loadConfig</a></li><li><a href="global.html#startReaderAnonymizationJob">startReaderAnonymizationJob</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a>
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>

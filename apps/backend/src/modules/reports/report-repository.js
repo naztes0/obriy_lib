@@ -171,6 +171,7 @@ function mapLoan(row, today) {
   };
 }
 
+/** Формує SQL-вибірки для передбачених системою звітів. */
 export class ReportRepository {
   constructor(pool) {
     this.pool = pool;

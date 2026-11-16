@@ -1,3 +1,4 @@
+/** Працює з обліковими записами працівників і cookie-сесіями в PostgreSQL. */
 export class AuthRepository {
   constructor(pool) {
     this.pool = pool;

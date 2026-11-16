@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: modules/school-classes/school-class-repository.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: modules/school-classes/school-class-repository.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>function mapSchoolClass(row) {
+  return {
+    id: String(row.id),
+    name: row.name,
+    isActive: row.is_active,
+  };
+}
+
+/** Виконує операції з довідником навчальних класів. */
+export class SchoolClassRepository {
+  async remove(classId) {
+    await this.pool.query('DELETE FROM school_classes WHERE id=$1',[classId]);
+  }
+  constructor(pool) {
+    this.pool = pool;
+  }
+
+  async list({ status }) {
+    const condition =
+      status === 'active' ? 'WHERE is_active = true' : status === 'inactive' ? 'WHERE is_active = false' : '';
+    const result = await this.pool.query(
+      `SELECT id, name, is_active
+       FROM school_classes
+       ${condition}
+       ORDER BY lower(name), id`,
+    );
+    return result.rows.map(mapSchoolClass);
+  }
+
+  async findById(classId) {
+    const result = await this.pool.query(
+      'SELECT id, name, is_active FROM school_classes WHERE id = $1',
+      [classId],
+    );
+    return result.rowCount ? mapSchoolClass(result.rows[0]) : null;
+  }
+
+  async create(name) {
+    const result = await this.pool.query(
+      `INSERT INTO school_classes (name)
+       VALUES ($1)
+       RETURNING id, name, is_active`,
+      [name],
+    );
+    return mapSchoolClass(result.rows[0]);
+  }
+
+  async updateName(classId, name) {
+    const result = await this.pool.query(
+      `UPDATE school_classes
+       SET name = $2
+       WHERE id = $1
+       RETURNING id, name, is_active`,
+      [classId, name],
+    );
+    return result.rowCount ? mapSchoolClass(result.rows[0]) : null;
+  }
+
+  async setActive(classId, isActive) {
+    const result = await this.pool.query(
+      `UPDATE school_classes
+       SET is_active = $2
+       WHERE id = $1
+       RETURNING id, name, is_active`,
+      [classId, isActive],
+    );
+    return result.rowCount ? mapSchoolClass(result.rows[0]) : null;
+  }
+}
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Classes</h3><ul><li><a href="AppError.html">AppError</a></li><li><a href="AuthRepository.html">AuthRepository</a></li><li><a href="AuthService.html">AuthService</a></li><li><a href="CatalogRepository.html">CatalogRepository</a></li><li><a href="CatalogService.html">CatalogService</a></li><li><a href="CopyRepository.html">CopyRepository</a></li><li><a href="CopyService.html">CopyService</a></li><li><a href="CorrectionRepository.html">CorrectionRepository</a></li><li><a href="CorrectionService.html">CorrectionService</a></li><li><a href="HealthService.html">HealthService</a></li><li><a href="HistoryRepository.html">HistoryRepository</a></li><li><a href="HistoryService.html">HistoryService</a></li><li><a href="ImportPackageError.html">ImportPackageError</a></li><li><a href="ImportRepository.html">ImportRepository</a></li><li><a href="ImportService.html">ImportService</a></li><li><a href="LoanRepository.html">LoanRepository</a></li><li><a href="LoanService.html">LoanService</a></li><li><a href="ReaderRepository.html">ReaderRepository</a></li><li><a href="ReaderService.html">ReaderService</a></li><li><a href="ReportRepository.html">ReportRepository</a></li><li><a href="ReportService.html">ReportService</a></li><li><a href="RestrictionRepository.html">RestrictionRepository</a></li><li><a href="RestrictionService.html">RestrictionService</a></li><li><a href="Router.html">Router</a></li><li><a href="SchoolClassRepository.html">SchoolClassRepository</a></li><li><a href="SchoolClassService.html">SchoolClassService</a></li><li><a href="StaffRepository.html">StaffRepository</a></li><li><a href="StaffService.html">StaffService</a></li><li><a href="TextbookBatchRepository.html">TextbookBatchRepository</a></li><li><a href="TextbookBatchService.html">TextbookBatchService</a></li></ul><h3>Global</h3><ul><li><a href="global.html#createApp">createApp</a></li><li><a href="global.html#createPool">createPool</a></li><li><a href="global.html#generateReaderTicketPdf">generateReaderTicketPdf</a></li><li><a href="global.html#loadConfig">loadConfig</a></li><li><a href="global.html#startReaderAnonymizationJob">startReaderAnonymizationJob</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a>
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>
